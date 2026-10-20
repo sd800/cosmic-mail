@@ -8,15 +8,18 @@ public struct RenderedMail: Sendable {
     self.body = body
     self.links = links
   }
-  public func page(dark: Bool, scale: Double = 1) -> String {
-    """
-    <!doctype html><html data-theme="\(dark ? "dark" : "light")"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>
-    :root{color-scheme:light dark;--paper:#fff;--ink:#252629;--muted:#74777d;--line:#e3e5e8;--quote:#f4f5f7;--link:#2864be}
-    :root[data-theme=dark]{--paper:#232426;--ink:#e5e5e7;--muted:#a3a5ab;--line:#404246;--quote:#2c2e31;--link:#90baff}
-    *{box-sizing:border-box}html,body{margin:0;background:var(--paper);color:var(--ink)}body{padding:12px 0 32px;font:\(16*scale)px/1.7 -apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
-    p{margin:0 0 1em}h1,h2,h3,h4,h5,h6{line-height:1.35;margin:1em 0 .6em}h1{font-size:1.6em}h2{font-size:1.35em}h3{font-size:1.15em}a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}img{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}td,th{padding:7px 10px;vertical-align:top;border:1px solid var(--line)}blockquote{margin:18px 0;padding:10px 18px;border-left:3px solid var(--line);background:var(--quote);color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font: .9em/1.6 ui-monospace,monospace;padding:14px;background:var(--quote);border-radius:8px}code{font-family:ui-monospace,monospace}hr{border:0;border-top:1px solid var(--line);margin:24px 0}.plain{white-space:break-spaces}.image-placeholder{color:var(--muted);font-size:.85em}ul,ol{padding-left:1.6em}li{margin:.25em 0}
-    </style></head><body>\(body)</body></html>
-    """
+  public func page(dark: Bool, scale: Double = 1, backgroundRGB: UInt32? = nil) -> String {
+    let paper =
+      backgroundRGB.map { String(format: "#%06X", $0 & 0xFFFFFF) }
+      ?? (dark ? "#232426" : "#FFFFFF")
+    return """
+      <!doctype html><html data-theme="\(dark ? "dark" : "light")" style="--paper:\(paper)"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>
+      :root{color-scheme:light dark;--ink:#252629;--muted:#74777d;--line:#e3e5e8;--quote:#f4f5f7;--link:#2864be}
+      :root[data-theme=dark]{--ink:#e5e5e7;--muted:#a3a5ab;--line:#404246;--quote:#2c2e31;--link:#90baff}
+      *{box-sizing:border-box}html,body{margin:0;background:var(--paper);color:var(--ink)}body{padding:12px 0 32px;font:\(16*scale)px/1.7 -apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+      p{margin:0 0 1em}h1,h2,h3,h4,h5,h6{line-height:1.35;margin:1em 0 .6em}h1{font-size:1.6em}h2{font-size:1.35em}h3{font-size:1.15em}a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}img{max-width:100%;height:auto}table{border-collapse:collapse;max-width:100%}td,th{padding:7px 10px;vertical-align:top;border:1px solid var(--line)}blockquote{margin:18px 0;padding:10px 18px;border-left:3px solid var(--line);background:var(--quote);color:var(--muted)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font: .9em/1.6 ui-monospace,monospace;padding:14px;background:var(--quote);border-radius:8px}code{font-family:ui-monospace,monospace}hr{border:0;border-top:1px solid var(--line);margin:24px 0}.plain{white-space:break-spaces}.image-placeholder{color:var(--muted);font-size:.85em}ul,ol{padding-left:1.6em}li{margin:.25em 0}
+      </style></head><body>\(body)</body></html>
+      """
   }
 }
 public enum SafeHTML {

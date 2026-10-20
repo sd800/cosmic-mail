@@ -41,24 +41,40 @@ struct MailWebView: NSViewRepresentable {
   }
   func updateNSView(_ web: WKWebView, context: Context) {
     let coordinator = context.coordinator
+    let (paperColor, paperRGB) = Self.paperColor(dark: dark)
+    let paperCSS = String(format: "#%06X", paperRGB)
     coordinator.open = open
     coordinator.links = rendered.links
-    coordinator.html = rendered.page(dark: dark, scale: scale)
+    coordinator.html = rendered.page(dark: dark, scale: scale, backgroundRGB: paperRGB)
     coordinator.fallback = RenderedMail(
       body: "<div class=\"plain\">" + SafeHTML.escape(AppModel.shared.message?.plain ?? "")
         + "</div>", links: [:]
-    ).page(dark: dark, scale: scale)
+    ).page(dark: dark, scale: scale, backgroundRGB: paperRGB)
     let changed = coordinator.identity != identity || coordinator.scale != scale
     coordinator.identity = identity
     coordinator.scale = scale
     if changed {
       coordinator.load(web)
-    } else if coordinator.dark != dark {
+    } else if coordinator.dark != dark || coordinator.paperRGB != paperRGB {
       // Fixed app-owned code only; the source message never supplies JavaScript.
-      web.evaluateJavaScript("document.documentElement.dataset.theme='\(dark ? "dark" : "light")'")
+      web.evaluateJavaScript(
+        "document.documentElement.dataset.theme='\(dark ? "dark" : "light")';document.documentElement.style.setProperty('--paper','\(paperCSS)')"
+      )
     }
     coordinator.dark = dark
-    web.underPageBackgroundColor = dark ? NSColor(calibratedWhite: 0.14, alpha: 1) : .white
+    coordinator.paperRGB = paperRGB
+    web.underPageBackgroundColor = paperColor
+  }
+  private static func paperColor(dark: Bool) -> (NSColor, UInt32) {
+    var resolved = dark ? NSColor(calibratedWhite: 0.12, alpha: 1) : NSColor.white
+    NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+      resolved = NSColor.textBackgroundColor.usingColorSpace(.sRGB) ?? resolved
+    }
+    let color = resolved.usingColorSpace(.sRGB) ?? resolved
+    func byte(_ value: CGFloat) -> UInt32 { UInt32((min(1, max(0, value)) * 255).rounded()) }
+    let rgb =
+      byte(color.redComponent) << 16 | byte(color.greenComponent) << 8 | byte(color.blueComponent)
+    return (color, rgb)
   }
   static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) {
     web.stopLoading()
@@ -69,6 +85,7 @@ struct MailWebView: NSViewRepresentable {
     coordinator.fallback = ""
   }
   final class Coordinator: NSObject, WKNavigationDelegate {
+    var paperRGB: UInt32?
     var identity: UUID?, scale: Double = 1, dark = false, ready = false, failed = false
     var links: [String: String] = [:], html = "", fallback = "", open: ((String) -> Void)?
     func load(_ web: WKWebView) {

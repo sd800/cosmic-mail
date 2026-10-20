@@ -25,6 +25,8 @@ MBOX scans 128 KiB chunks, records byte ranges and compact envelope fields, and 
 
 MSG/OFT reads CFB FAT/miniFAT chains and property streams directly, with cycle/bounds checks. It supports Unicode/ANSI envelope text, plain/HTML bodies, transport headers, and by-value attachments. It never activates OLE objects. Compressed RTF-only bodies, embedded Outlook-message attachments, encrypted messages, PST/OST, and OLM are not decoded in this release. Such omissions must not be advertised as complete Outlook fidelity.
 
+Email dates display the original stated numeric time-zone offset as UTC+/- (including minute offsets), with seconds when present. Parenthetical abbreviations do not override a numeric offset. Original headers and exported source bytes remain unchanged.
+
 ## Safe display and budgets
 
 See [SECURITY.md](SECURITY.md). Limits are intentionally conservative: 32 MiB/message, 1 GiB/MBOX, 50,000 messages, 256 KiB/header block, 500 MIME parts, 16 nested parts, and a 96 MiB aggregate MIME parse-work budget. Displayed body input is capped at 4 MiB. Reconstructed HTML is capped around 8 MiB/50,000 tags. Inline raster input is limited to 4 MiB total, single frame, maximum 8192 on either side, and 12 million pixels. MSG attachment data is limited to 32 MiB total.

@@ -104,7 +104,10 @@ struct MessageView: View {
         ForEach(Array(mail.headers.enumerated()), id: \.offset) { _, field in
           VStack(alignment: .leading, spacing: 3) {
             Text(field.name).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-            Text(field.value).font(.system(size: 14)).textSelection(.enabled)
+            Text(
+              ["date", "resent-date", "delivery-date"].contains(field.name.lowercased())
+                ? readableDate(field.value) : field.value
+            ).font(.system(size: 14)).textSelection(.enabled)
           }
         }
       }.frame(maxWidth: .infinity, alignment: .leading).padding(14)

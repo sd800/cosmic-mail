@@ -198,15 +198,7 @@ struct MessageList: View {
   }
 }
 func readableDate(_ value: String) -> String {
-  let formatter = DateFormatter()
-  formatter.locale = Locale(identifier: "en_US_POSIX")
-  for format in ["EEE, d MMM yyyy HH:mm:ss Z", "d MMM yyyy HH:mm:ss Z", "EEE, d MMM yyyy HH:mm Z"] {
-    formatter.dateFormat = format
-    if let date = formatter.date(from: value) {
-      return date.formatted(date: .abbreviated, time: .shortened)
-    }
-  }
-  return value
+  MailDate.display(value)
 }
 
 private final class DropBatch: @unchecked Sendable {

@@ -1,5 +1,13 @@
 # Release verification
 
+## 26.1020.2 — 2026-10-20
+
+- Three focused date regressions passed: numeric offsets with ambiguous comments, fractional/zero offsets and English/Chinese formatting, and malformed input without guessed offsets.
+- Updated capture layout removes the heading subtitle and retains a separate unsent-status line above the footer note.
+- The affected HTML isolation regression also passed with native light/dark background values.
+- Installed release smoke check confirmed the dark reading area is continuous with the message header and the About panel contains one copyright line.
+- Installed-app smoke check confirmed the exact +0800 (CST) sample displays its original midnight time with UTC+8.
+
 ## 26.1020.1 — 2026-10-20
 
 - 12 focused XCTest cases passed on Apple Silicon: mailto decoding, MIME alternatives/encodings/CID, HTML isolation, EMLX export, MBOX indexing/cancellation, Maildir symlink filtering, Outlook Unicode/FAT cycles, malformed inputs, entity decoding, image bounds, and actual WebKit resource-rule compilation.

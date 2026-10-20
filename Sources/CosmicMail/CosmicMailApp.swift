@@ -25,7 +25,6 @@ import SwiftUI
         CommandGroup(replacing: .appInfo) {
           Button(L("About Cosmic Mail", "关于 Cosmic Mail")) {
             NSApp.orderFrontStandardAboutPanel(options: [
-              .credits: NSAttributedString(string: "© 2026 Songming.org"),
               .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"]
                 as? String ?? "",
             ])

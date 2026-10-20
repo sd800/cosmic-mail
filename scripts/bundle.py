@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Create native bundle metadata; never changes system default handlers."""
-import pathlib, plistlib, shutil, sys
+import pathlib, plistlib, shutil, subprocess, sys
 root=pathlib.Path(__file__).resolve().parent.parent
 app=pathlib.Path(sys.argv[1]); binary=pathlib.Path(sys.argv[2]); version=(root/'VERSION').read_text().strip()
 (app/'Contents/MacOS').mkdir(parents=True,exist_ok=True); (app/'Contents/Resources').mkdir(exist_ok=True)
@@ -14,3 +14,11 @@ for uti,exts,mime in formats:
     if mime:tags['public.mime-type']=mime
     info['UTImportedTypeDeclarations'].append(dict(UTTypeIdentifier=uti,UTTypeDescription='Email message or mailbox',UTTypeConformsTo=['public.data'],UTTypeTagSpecification=tags))
 with (app/'Contents/Info.plist').open('wb') as f:plistlib.dump(info,f)
+
+# Finder metadata may be added while inspecting a previous generated bundle.
+# Remove only signing-incompatible metadata, never quarantine/security attributes.
+for path in [app, *app.rglob('*')]:
+    keys = subprocess.check_output(['/usr/bin/xattr', str(path)], text=True).splitlines()
+    for key in ('com.apple.FinderInfo', 'com.apple.ResourceFork'):
+        if key in keys:
+            subprocess.run(['/usr/bin/xattr', '-d', key, str(path)], check=True)

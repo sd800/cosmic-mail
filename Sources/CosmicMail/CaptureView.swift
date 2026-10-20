@@ -11,11 +11,7 @@ struct CaptureView: View {
         HStack(spacing: 14) {
           Image(systemName: "link.circle.fill").font(.system(size: 38, weight: .light))
             .foregroundStyle(.tint)
-          VStack(alignment: .leading, spacing: 5) {
-            Text(L("Email link", "邮件链接")).font(.title2.weight(.semibold))
-            Text(L("Nothing sent. Nothing launched.", "没有发送邮件，也没有打开其他邮件应用。")).foregroundStyle(
-              .secondary)
-          }
+          Text(L("Email link", "邮件链接")).font(.title2.weight(.semibold))
         }
         VStack(spacing: 0) {
           captureRow(L("To", "收件人"), capture.to)
@@ -55,11 +51,13 @@ struct CaptureView: View {
           Button(L("Copy original link", "复制原始链接")) { copyText(capture.original) }.buttonStyle(
             .bordered)
         }.controlSize(.large)
-        Text(
-          L(
-            "This link is only held in this window. You can copy what you need, or simply close it.",
-            "链接仅保留在当前窗口中。可以复制需要的内容，也可以直接关闭。")
-        ).font(.system(size: 14)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 6) {
+          Text(L("Nothing sent.", "没有发送邮件。"))
+          Text(
+            L(
+              "This link is only held in this window. You can copy what you need, or simply close it.",
+              "链接仅保留在当前窗口中。可以复制需要的内容，也可以直接关闭。"))
+        }.font(.system(size: 14)).foregroundStyle(.secondary)
       }.padding(44).frame(maxWidth: 800, alignment: .leading).frame(maxWidth: .infinity)
     }.onChange(of: capture) { _, _ in copied = false }
   }

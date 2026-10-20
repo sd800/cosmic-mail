@@ -82,6 +82,10 @@ final class MailCoreTests: XCTestCase {
     ] { XCTAssertFalse(result.body.contains(text), text) }
     XCTAssertTrue(page.contains("default-src 'none'"))
     XCTAssertTrue(page.contains("script-src 'none'"))
+    XCTAssertTrue(
+      result.page(dark: true, backgroundRGB: 0x1E1E1E).contains("style=\"--paper:#1E1E1E\""))
+    XCTAssertTrue(
+      result.page(dark: false, backgroundRGB: 0xFFFFFF).contains("style=\"--paper:#FFFFFF\""))
     XCTAssertNil(SafeHTML.safeLink("https://user:secret@example.edu"))
     XCTAssertNil(SafeHTML.safeLink("x-apple.systempreferences:privacy"))
   }
@@ -195,22 +199,32 @@ extension MailCoreTests {
 }
 
 extension MailCoreTests {
-    func testEntitiesAndMalformedBoundariesStayInert() throws {
-        XCTAssertEqual(SafeHTML.entities("A &amp; &#x4e2d;&#25991; &unknown; &lt;"),"A & 中文 &unknown; <")
-        let mail=try MIME.parse(Data("Subject: Broken boundary\nContent-Type: multipart/mixed; boundary=x\n\n--x\nContent-Type: text/plain\n\nKept without closing boundary".utf8))
-        XCTAssertEqual(mail.plain,"Kept without closing boundary")
-        for count in 0..<128 {
-            let bytes=Data((0..<count).map{UInt8(truncatingIfNeeded:$0*73+count)})
-            _ = try? Outlook.parse(bytes)
-            _ = try? MIME.parse(bytes)
-        }
-        var hostile=MailMessage();hostile.html=String(repeating:"&amp;",count:10000)+"<script><input><p>untrusted</script><p>Visible</p>"
-        let result=SafeHTML.render(hostile)
-        XCTAssertFalse(result.body.contains("<script"))
+  func testEntitiesAndMalformedBoundariesStayInert() throws {
+    XCTAssertEqual(
+      SafeHTML.entities("A &amp; &#x4e2d;&#25991; &unknown; &lt;"), "A & 中文 &unknown; <")
+    let mail = try MIME.parse(
+      Data(
+        "Subject: Broken boundary\nContent-Type: multipart/mixed; boundary=x\n\n--x\nContent-Type: text/plain\n\nKept without closing boundary"
+          .utf8))
+    XCTAssertEqual(mail.plain, "Kept without closing boundary")
+    for count in 0..<128 {
+      let bytes = Data((0..<count).map { UInt8(truncatingIfNeeded: $0 * 73 + count) })
+      _ = try? Outlook.parse(bytes)
+      _ = try? MIME.parse(bytes)
     }
-    func testRasterBudgetRejectsDamagedAndAnimatedInputs() {
-        XCTAssertFalse(SafeHTML.safeRaster(Data([137,80,78,71,13,10,26,10])))
-        let png=Data(base64Encoded:"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XbS8AAAAASUVORK5CYII=")!
-        XCTAssertTrue(SafeHTML.safeRaster(png))
-    }
+    var hostile = MailMessage()
+    hostile.html =
+      String(repeating: "&amp;", count: 10000)
+      + "<script><input><p>untrusted</script><p>Visible</p>"
+    let result = SafeHTML.render(hostile)
+    XCTAssertFalse(result.body.contains("<script"))
+  }
+  func testRasterBudgetRejectsDamagedAndAnimatedInputs() {
+    XCTAssertFalse(SafeHTML.safeRaster(Data([137, 80, 78, 71, 13, 10, 26, 10])))
+    let png = Data(
+      base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XbS8AAAAASUVORK5CYII="
+    )!
+    XCTAssertTrue(SafeHTML.safeRaster(png))
+  }
 }
