@@ -1,0 +1,7 @@
+.build*/
+dist/
+test-dist/
+sidenote/
+.DS_Store
+._*
+*.xcuserstate
