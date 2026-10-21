@@ -6,15 +6,15 @@ Cosmic Mail is a native macOS app for reading saved email and catching email lin
 
 Open a message or browse an archive in a quiet, familiar Mac interface. Read in light or dark mode, inspect message details, and save individual attachments. When Cosmic Mail is your chosen email-link app, `mailto:` links open as readable, copyable details. No email account is needed.
 
-## Starting point
+## Product statement
 
-I built Cosmic Mail to address two recurring frustrations in my own macOS workflow.
+Cosmic Mail is built around a simple idea: **opening something should not mean committing to an entire workflow.** On macOS, two everyday actions can involve more friction than necessary: clicking an email link and reading a saved email archive.
 
-**Clicking an email link is not always an intention to write.** An accidental `mailto:` click could launch Apple Mail and open a compose window. In my experience, it could also create an unwanted Hide My Email alias that remained in iCloud, gradually leaving behind unused addresses. I wanted a way to inspect and copy the link’s contents without starting a mail workflow or creating anything in the background.
+**Clicking an email link is not the same as deciding to write an email.** A `mailto:` link can look like an ordinary hyperlink, yet by default a single click launches Apple Mail and opens a compose window. For iCloud+ users, these unintended interactions can also result in unused Hide My Email aliases accumulating in iCloud, requiring manual cleanup. Cosmic Mail offers a more deliberate alternative. When chosen as the default email app, it presents the link's recipients, subject, and message content for viewing or copying. No compose window opens, and no alias is created.
 
-**Reading an email backup should be as simple as opening a file.** When I downloaded my Gmail archive as an MBOX file, I wanted to browse its messages directly, rather than set up an email account or import the archive into a mail library. Cosmic Mail treats saved email as something you can open, read, and close.
+**Reading an archive should be as straightforward as opening any other local file.** Apple Mail requires MBOX archives to be imported into its mail library before they can be browsed, adding unnecessary steps for someone who simply wants to inspect a Gmail backup or revisit old messages. Cosmic Mail opens email files and supported mailbox archives directly, without account setup or library import, while leaving the original files unchanged.
 
-These needs shaped its scope: a reader for saved mail and a deliberate stopping point for email links, without account login or sending features.
+**Cosmic Mail is a reader, not a replacement inbox.** It intentionally focuses on local email viewing and deliberate email-link handling, leaving account management, synchronization, and sending to the email services people already use. The goal is not to add another email workflow, but to spare people the ones they never meant to start.
 
 ## Install
 
