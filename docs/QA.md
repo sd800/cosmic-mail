@@ -1,5 +1,12 @@
 # Release verification
 
+## 26.1020.4 — 2026-10-20
+
+- Six focused small-input checks passed: sidebar append/reuse/per-file selection/close, actual-window-only session cleanup, stable presentations/latest selection and close, explicit renderer retry after dismissing an alert, failed-source clearing, actual WebKit shell reuse/isolated body replacement with content JavaScript disabled, and existing HTML active/remote-content isolation.
+- The WebKit check verifies a document marker survives message replacement, light/dark and font-size changes preserve selected text, a new message clears prior selection, quoted text remains literal, and CSP remains installed.
+- Each fixture contains only two tiny synthetic messages. No large inputs, benchmarks, or stress tests were run.
+- Installed-app smoke check verified HTML/attachment-to-plain switching with the toolbar button identities preserved. Final default list width is 305 pt; window sizes remain unchanged.
+
 ## 26.1020.3 — 2026-10-20
 
 - 11 focused, small-input tests passed: incremental MBOX batches, low simulated index budgets, Content-Length/prose separators, cancellation, changed sources/RAM index validity, search, Maildir symlink filtering, MIME alternatives, and date formatting.

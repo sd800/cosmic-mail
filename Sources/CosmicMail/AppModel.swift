@@ -33,7 +33,15 @@ final class Cancellation: @unchecked Sendable {
   @Published private var filteredEntries: [MessageEntry] = []
   @Published var showDetails = false
   @Published var selectionVersion = UUID()
-  var mailListWidth: CGFloat = 310
+  @Published private(set) var readRequest = UUID()
+  @Published private(set) var readerFailed = false
+  private var displayedCollection: UUID?
+  private var displayedEntry: Int?
+  var currentMessageReady: Bool {
+    !reading && !readerFailed && message != nil && displayedCollection == selectedCollection
+      && displayedEntry == selectedEntry
+  }
+  var mailListWidth: CGFloat = 305
   private var token: Cancellation?
   private var readToken: Cancellation?
   private var searchToken: Cancellation?
@@ -42,6 +50,7 @@ final class Cancellation: @unchecked Sendable {
   private var scopes: [URL: ScopedMailFile] = [:]
   private var openingID: UUID?
   private var preferredOpeningID: UUID?
+  private var rememberedSelections: [UUID: Int] = [:]
   var active: MailCollection? { collections.first { $0.id == selectedCollection } }
   var entries: [MessageEntry] {
     query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -135,9 +144,12 @@ final class Cancellation: @unchecked Sendable {
           failures.append(L("Close an archive to free index memory.", "请关闭存档以释放索引内存。"))
           break
         }
+        let ext = source.url.pathExtension.lowercased()
+        let kind =
+          ["mbox", "mbx", "mbo"].contains(ext)
+          ? "MBOX" : source.url.hasDirectoryPath ? "Maildir" : ext.uppercased()
         var placeholder = MailCollection(
-          url: source.url, entries: [], kind: source.url.pathExtension.uppercased(),
-          isIndexing: true)
+          url: source.url, entries: [], kind: kind, isIndexing: true)
         if placeholder.kind.isEmpty { placeholder.kind = "Maildir" }
         let stub = placeholder
         let id = stub.id
@@ -216,6 +228,8 @@ final class Cancellation: @unchecked Sendable {
   private func releaseUnusedScopes() {
     let retained = Set(collections.map(\.url))
     scopes = scopes.filter { retained.contains($0.key) }
+    let retainedIDs = Set(collections.map(\.id))
+    rememberedSelections = rememberedSelections.filter { retainedIDs.contains($0.key) }
   }
   func cancel() {
     token?.cancel()
@@ -232,36 +246,75 @@ final class Cancellation: @unchecked Sendable {
     selectedCollection = id
     capture = nil
     query = ""
-    select(active?.entries.first?.id)
+    let saved = id.flatMap { rememberedSelections[$0] }
+    select(saved ?? active?.entries.first?.id)
+  }
+  func closeCollection(_ id: UUID) {
+    guard let position = collections.firstIndex(where: { $0.id == id }) else { return }
+    if openingID == id { cancel() }
+    let wasSelected = selectedCollection == id
+    collections.remove(at: position)
+    rememberedSelections[id] = nil
+    if wasSelected {
+      let next = collections.isEmpty ? nil : collections[min(position, collections.count - 1)].id
+      selectCollection(next)
+    }
+    releaseUnusedScopes()
   }
   func select(_ id: Int?) {
+    if id == selectedEntry, currentMessageReady, error == nil { return }
     readToken?.cancel()
     selectedEntry = id
-    message = nil
-    rendered = nil
-    showDetails = false
-    selectionVersion = UUID()
+    if let collection = selectedCollection, let id { rememberedSelections[collection] = id }
+    readRequest = UUID()
     guard let entry, entry.length <= Limits.message else {
+      clearPresentation()
       reading = false
       return
     }
     let operation = Cancellation()
     readToken = operation
+    let collectionID = selectedCollection
     let scope = active.flatMap { scopes[$0.url] }
     reading = true
     Task {
       do {
         let result = try await ArchiveWork.read(entry, scope: scope, token: operation)
         guard !operation.cancelled else { return }
-        message = result.0
-        rendered = result.1
-        reading = false
+        // Keep the old presentation mounted during the read; publish a complete replacement.
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+          readerFailed = false
+          message = result.0
+          rendered = result.1
+          displayedCollection = collectionID
+          displayedEntry = entry.id
+          selectionVersion = UUID()
+          showDetails = false
+          reading = false
+        }
       } catch {
         guard !operation.cancelled else { return }
+        clearPresentation()
         reading = false
         self.error = errorText(error)
       }
     }
+  }
+  func readingViewFailed(_ identity: UUID?, explanation: String) {
+    guard identity == selectionVersion, message != nil, !reading else { return }
+    readerFailed = true
+    error = explanation
+  }
+  private func clearPresentation() {
+    readerFailed = false
+    message = nil
+    rendered = nil
+    displayedCollection = nil
+    displayedEntry = nil
+    showDetails = false
+    selectionVersion = UUID()
   }
   func receive(_ url: URL) {
     do {
@@ -270,8 +323,7 @@ final class Cancellation: @unchecked Sendable {
       capture = captured
       readToken?.cancel()
       reading = false
-      message = nil
-      rendered = nil
+      clearPresentation()
       selectedCollection = nil
       selectedEntry = nil
       query = ""
@@ -290,13 +342,14 @@ final class Cancellation: @unchecked Sendable {
     collections = []
     selectedCollection = nil
     selectedEntry = nil
-    message = nil
-    rendered = nil
+    clearPresentation()
     capture = nil
     query = ""
     scopes = [:]
+    rememberedSelections = [:]
   }
   func exportOriginal() {
+    guard !reading else { return }
     guard let entry else { return }
     let panel = NSSavePanel()
     panel.nameFieldStringValue =
@@ -311,6 +364,9 @@ final class Cancellation: @unchecked Sendable {
     }
   }
   func saveAttachment(_ attachment: MailAttachment) {
+    guard currentMessageReady,
+      message?.attachments.contains(where: { $0.id == attachment.id }) == true
+    else { return }
     let panel = NSSavePanel()
     panel.nameFieldStringValue = safeFilename(attachment.name)
     if panel.runModal() == .OK, let url = panel.url {
@@ -319,7 +375,8 @@ final class Cancellation: @unchecked Sendable {
       }
     }
   }
-  func external(_ raw: String) {
+  func external(_ raw: String, from identity: UUID) {
+    guard identity == selectionVersion, currentMessageReady else { return }
     guard let safe = SafeHTML.safeLink(raw), let url = URL(string: safe) else { return }
     if url.scheme?.lowercased() == "mailto" {
       receive(url)

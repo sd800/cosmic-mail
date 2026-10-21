@@ -10,7 +10,7 @@ import SwiftUI
     Window("Cosmic Mail", id: "main") {
       ContentView().font(.system(size: 14)).preferredColorScheme(prefs.colorScheme)
         .frame(minWidth: 860, minHeight: 580)
-        .onDisappear { model.closeAll() }
+        .background(MainWindowLifecycle(close: model.closeAll).frame(width: 0, height: 0))
     }.defaultSize(width: 1120, height: 760)
       .commands {
         CommandGroup(replacing: .newItem) {
@@ -26,7 +26,7 @@ import SwiftUI
           Button(L("About Cosmic Mail", "关于 Cosmic Mail")) {
             NSApp.orderFrontStandardAboutPanel(options: [
               .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"]
-                as? String ?? "",
+                as? String ?? ""
             ])
           }
         }

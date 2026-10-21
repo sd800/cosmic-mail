@@ -2,14 +2,31 @@ import MailCore
 import SwiftUI
 import WebKit
 
-/// Only app-generated, sanitized markup enters this view. Three independent barriers:
-/// allowlist reconstruction, a restrictive CSP, and a WebKit resource block list.
+/// One local shell per reading view. Message changes do not navigate/recreate WebKit.
 struct MailWebView: NSViewRepresentable {
   let rendered: RenderedMail
+  let plain: String
   let identity: UUID
   let dark: Bool
   let scale: Double
-  let open: (String) -> Void
+  let interactive: Bool
+  let open: (String, UUID) -> Void
+
+  /// App-owned code in an isolated world. Mail is passed as data, never interpolated as code.
+  static let updateScript = """
+    if (replace) {
+      const fragment = document.createElement('template');
+      fragment.innerHTML = body;
+      window.getSelection()?.removeAllRanges();
+      document.body.replaceChildren(fragment.content);
+      window.scrollTo(0, 0);
+    }
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.documentElement.style.setProperty('--paper', paper);
+    document.body.style.fontSize = fontSize + 'px';
+    return true;
+    """
+
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeNSView(context: Context) -> WKWebView {
     let configuration = WKWebViewConfiguration()
@@ -21,49 +38,38 @@ struct MailWebView: NSViewRepresentable {
     let coordinator = context.coordinator
     web.navigationDelegate = coordinator
     web.allowsBackForwardNavigationGestures = false
-    // Do not load any message until this independent network barrier is installed.
-    let rules = MailSecurity.contentRules
+    web.underPageBackgroundColor = Self.paperColor(dark: dark).0
+    coordinator.web = web
     WKContentRuleListStore.default().compileContentRuleList(
-      forIdentifier: "CosmicMail.LocalOnly.v2", encodedContentRuleList: rules
+      forIdentifier: "CosmicMail.LocalOnly.v2", encodedContentRuleList: MailSecurity.contentRules
     ) { [weak web, weak coordinator] list, _ in
-      guard let web, let coordinator else { return }
+      guard let web, let coordinator, !coordinator.retired else { return }
       if let list {
         web.configuration.userContentController.add(list)
         coordinator.ready = true
-        coordinator.load(web)
       } else {
-        // Fail closed: show only escaped plain text, without resource references.
+        // Fail closed: the shell receives escaped text only if the resource barrier fails.
         coordinator.failed = true
-        coordinator.load(web)
       }
+      coordinator.loadShell()
     }
     return web
   }
   func updateNSView(_ web: WKWebView, context: Context) {
     let coordinator = context.coordinator
-    let (paperColor, paperRGB) = Self.paperColor(dark: dark)
-    let paperCSS = String(format: "#%06X", paperRGB)
-    coordinator.open = open
-    coordinator.links = rendered.links
-    coordinator.html = rendered.page(dark: dark, scale: scale, backgroundRGB: paperRGB)
-    coordinator.fallback = RenderedMail(
-      body: "<div class=\"plain\">" + SafeHTML.escape(AppModel.shared.message?.plain ?? "")
-        + "</div>", links: [:]
-    ).page(dark: dark, scale: scale, backgroundRGB: paperRGB)
-    let changed = coordinator.identity != identity || coordinator.scale != scale
-    coordinator.identity = identity
-    coordinator.scale = scale
-    if changed {
-      coordinator.load(web)
-    } else if coordinator.dark != dark || coordinator.paperRGB != paperRGB {
-      // Fixed app-owned code only; the source message never supplies JavaScript.
-      web.evaluateJavaScript(
-        "document.documentElement.dataset.theme='\(dark ? "dark" : "light")';document.documentElement.style.setProperty('--paper','\(paperCSS)')"
-      )
-    }
-    coordinator.dark = dark
-    coordinator.paperRGB = paperRGB
+    let (paperColor, rgb) = Self.paperColor(dark: dark)
     web.underPageBackgroundColor = paperColor
+    coordinator.open = open
+    coordinator.interactive = interactive
+    let request = Content(
+      identity: identity, rendered: rendered, plain: plain, dark: dark,
+      scale: min(2, max(0.5, scale.isFinite ? scale : 1)), paperRGB: rgb)
+    coordinator.desired = request
+    if coordinator.terminatedAt != nil, coordinator.terminatedAt != identity {
+      coordinator.terminatedAt = nil
+      coordinator.loadShell()
+    }
+    coordinator.apply()
   }
   private static func paperColor(dark: Bool) -> (NSColor, UInt32) {
     var resolved = dark ? NSColor(calibratedWhite: 0.12, alpha: 1) : NSColor.white
@@ -77,34 +83,104 @@ struct MailWebView: NSViewRepresentable {
     return (color, rgb)
   }
   static func dismantleNSView(_ web: WKWebView, coordinator: Coordinator) {
+    coordinator.retired = true
     web.stopLoading()
     web.navigationDelegate = nil
     coordinator.open = nil
     coordinator.links = [:]
-    coordinator.html = ""
-    coordinator.fallback = ""
+    coordinator.desired = nil
+    coordinator.applied = nil
+    coordinator.web = nil
+  }
+  struct Content {
+    var identity: UUID
+    var rendered: RenderedMail
+    var plain: String
+    var dark: Bool
+    var scale: Double
+    var paperRGB: UInt32
+    func matches(_ other: Content?) -> Bool {
+      other?.identity == identity && other?.dark == dark && other?.scale == scale
+        && other?.paperRGB == paperRGB
+    }
   }
   final class Coordinator: NSObject, WKNavigationDelegate {
-    var paperRGB: UInt32?
-    var identity: UUID?, scale: Double = 1, dark = false, ready = false, failed = false
-    var links: [String: String] = [:], html = "", fallback = "", open: ((String) -> Void)?
-    func load(_ web: WKWebView) {
-      guard !html.isEmpty, ready || failed else { return }
-      web.loadHTMLString(ready ? html : fallback, baseURL: nil)
+    weak var web: WKWebView?
+    var ready = false, failed = false, retired = false, interactive = false
+    private var shellNavigation: WKNavigation?
+    private var documentReady = false
+    private var applying = false
+    var desired: Content?, applied: Content?
+    var terminatedAt: UUID?
+    private var failedAt: UUID?
+    var links: [String: String] = [:], open: ((String, UUID) -> Void)?
+
+    func loadShell() {
+      guard !retired, let web, ready || failed, shellNavigation == nil else { return }
+      // Empty trusted shell only; message content never enters a navigation/loadHTMLString call.
+      let html = RenderedMail(body: "", links: [:]).page(
+        dark: desired?.dark ?? false, scale: desired?.scale ?? 1,
+        backgroundRGB: desired?.paperRGB)
+      documentReady = false
+      shellNavigation = web.loadHTMLString(html, baseURL: nil)
+    }
+    func apply() {
+      guard !retired, documentReady, !applying, terminatedAt == nil, let web,
+        let request = desired, failedAt != request.identity, !request.matches(applied)
+      else { return }
+      applying = true
+      let replace = applied?.identity != request.identity
+      let body =
+        ready
+        ? request.rendered.body
+        : "<div class=\"plain\">" + SafeHTML.escape(request.plain) + "</div>"
+      web.callAsyncJavaScript(
+        MailWebView.updateScript,
+        arguments: [
+          "body": replace ? body : "", "replace": replace, "dark": request.dark,
+          "paper": String(format: "#%06X", request.paperRGB), "fontSize": 16 * request.scale,
+        ], in: nil, in: .defaultClient
+      ) { [weak self] result in
+        guard let self, !self.retired, self.terminatedAt == nil else { return }
+        self.applying = false
+        switch result {
+        case .success:
+          self.applied = request
+          self.links = self.ready ? request.rendered.links : [:]
+          self.apply()  // At most one in-flight update; coalesce rapid changes to the latest request.
+        case .failure:
+          self.failedAt = request.identity
+          self.links = [:]
+          if self.desired?.identity != request.identity {
+            self.apply()
+            return
+          }
+          AppModel.shared.readingViewFailed(
+            request.identity,
+            explanation: L(
+              "The reading view could not update. Try opening the message again.",
+              "阅读视图未能更新，请尝试重新打开这封邮件。"))
+        }
+      }
+    }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+      guard !retired, navigation === shellNavigation else { return }
+      documentReady = true
+      apply()
     }
     func webView(
       _ webView: WKWebView, decidePolicyFor action: WKNavigationAction,
       decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
     ) {
-      guard let url = action.request.url else {
+      guard !retired, let url = action.request.url else {
         decisionHandler(.cancel)
         return
       }
       if action.navigationType == .linkActivated, url.scheme == "cosmic-link", let id = url.host,
-        let target = links[id]
+        interactive, !applying, desired?.identity == applied?.identity, let target = links[id]
       {
         decisionHandler(.cancel)
-        open?(target)
+        if let identity = applied?.identity { open?(target, identity) }
         return
       }
       if action.navigationType == .other && url.absoluteString == "about:blank" {
@@ -117,13 +193,43 @@ struct MailWebView: NSViewRepresentable {
       _ webView: WKWebView, decidePolicyFor response: WKNavigationResponse,
       decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
     ) {
-      decisionHandler(response.isForMainFrame ? .allow : .cancel)
+      decisionHandler(!retired && response.isForMainFrame ? .allow : .cancel)
+    }
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+      navigationFailed(error)
+    }
+    func webView(
+      _ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
+      withError error: Error
+    ) {
+      navigationFailed(error)
+    }
+    private func navigationFailed(_ error: Error) {
+      guard !retired, (error as NSError).code != NSURLErrorCancelled else { return }
+      documentReady = false
+      shellNavigation = nil
+      terminatedAt = desired?.identity ?? UUID()
+      links = [:]
+      AppModel.shared.readingViewFailed(
+        desired?.identity,
+        explanation: L(
+          "The reading view could not open. Try opening the message again.",
+          "阅读视图未能打开，请尝试重新打开这封邮件。"))
     }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-      // No reload loop for a damaged or unexpectedly expensive message.
+      guard !retired else { return }
       webView.stopLoading()
-      AppModel.shared.error = L(
-        "The reading view stopped. Select the message again to reopen it.", "阅读视图已停止，请重新选择邮件。")
+      terminatedAt = desired?.identity
+      documentReady = false
+      shellNavigation = nil
+      applying = false
+      applied = nil
+      links = [:]
+      // Explicit reselection can recreate the shell, but unrelated updates never start a reload loop.
+      AppModel.shared.readingViewFailed(
+        desired?.identity,
+        explanation: L(
+          "The reading view stopped. Try opening the message again.", "阅读视图已停止，请尝试重新打开这封邮件。"))
     }
   }
 }

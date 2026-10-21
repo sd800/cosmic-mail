@@ -5,5 +5,6 @@ let package = Package(name: "CosmicMail", platforms: [.macOS(.v14)], products: [
 ], targets: [
     .target(name: "MailCore"),
     .executableTarget(name: "CosmicMail", dependencies: ["MailCore"]),
-    .testTarget(name: "MailCoreTests", dependencies: ["MailCore"])
+    .testTarget(name: "MailCoreTests", dependencies: ["MailCore"]),
+    .testTarget(name: "CosmicMailTests", dependencies: ["CosmicMail", "MailCore"])
 ])

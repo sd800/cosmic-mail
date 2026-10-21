@@ -30,6 +30,10 @@ struct ContentView: View {
                       .secondary)
                 }
               }.padding(.vertical, 4).tag(file.id)
+                .help(file.url.path)
+                .contextMenu {
+                  Button(L("Close file", "关闭文件")) { model.closeCollection(file.id) }
+                }
             }
           }
         }.listStyle(.sidebar)
@@ -52,8 +56,8 @@ struct ContentView: View {
         if let capture = model.capture {
           CaptureView(capture: capture)
         } else if let active = model.active {
-          if active.entries.count > 1 || active.isIndexing
-            || ["MBOX", "Maildir"].contains(active.kind)
+          if active.entries.count > 1
+            || ["MBOX", "MBX", "MBO", "Maildir"].contains(active.kind)
           {
             MailReadingPanes()
           } else {
@@ -78,17 +82,20 @@ struct ContentView: View {
         }
       }
       ToolbarItemGroup(placement: .primaryAction) {
-        if model.message != nil {
+        if model.active != nil {
           Button {
+            guard model.currentMessageReady else { return }
             model.showDetails.toggle()
           } label: {
             Image(systemName: "info.circle")
           }.help(L("Message details", "邮件详情"))
+            .disabled(
+              model.entry == nil || model.readerFailed || (!model.reading && model.message == nil))
           Button {
             model.exportOriginal()
           } label: {
             Image(systemName: "square.and.arrow.up")
-          }.help(L("Export original", "导出原始邮件"))
+          }.help(L("Export original", "导出原始邮件")).disabled(model.entry == nil)
         }
         Button {
           model.chooseFiles()

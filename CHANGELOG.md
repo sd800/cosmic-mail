@@ -2,6 +2,13 @@
 
 [简体中文](CHANGELOG_zh.md)
 
+## 26.1020.4 — 2026-10-20
+
+- Prevent reading-pane and toolbar flashing when switching messages.
+- Reuse the local reading page for message, appearance, and text-size changes.
+- Improve rapid selection, loading, failure, and close handling, and reject stale message actions.
+- Keep previously opened files in the sidebar, remember each file’s selected message, and support closing files individually.
+
 ## 26.1020.3 — 2026-10-20
 
 - Improve large mailbox browsing with incremental, memory-only indexing and background search.
