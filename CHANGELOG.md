@@ -2,6 +2,12 @@
 
 [简体中文](CHANGELOG_zh.md)
 
+## 26.1020.5 — 2026-10-20
+
+- Refine the app icon for clearer letter details.
+- Add the app logo to the English and Chinese README headings.
+- Correct the Outlook for Mac archive format description.
+
 ## 26.1020.4 — 2026-10-20
 
 - Prevent reading-pane and toolbar flashing when switching messages.

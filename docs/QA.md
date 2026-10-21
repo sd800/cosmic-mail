@@ -1,5 +1,12 @@
 # Release verification
 
+## 26.1020.5 — 2026-10-20
+
+- Generated icon matches the approved draft byte for byte; line coordinates are unchanged.
+- Universal release build and strict sandbox signature verification passed.
+- Both README headings use the same generated 256 px PNG at a 96 px display width.
+- No functional or stress tests were run for this icon and documentation update.
+
 ## 26.1020.4 — 2026-10-20
 
 - Six focused small-input checks passed: sidebar append/reuse/per-file selection/close, actual-window-only session cleanup, stable presentations/latest selection and close, explicit renderer retry after dismissing an alert, failed-source clearing, actual WebKit shell reuse/isolated body replacement with content JavaScript disabled, and existing HTML active/remote-content isolation.

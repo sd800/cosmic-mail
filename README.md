@@ -1,4 +1,4 @@
-# Cosmic Mail
+# <img src="docs/assets/cosmic-mail.png" width="96" align="right" alt=""> Cosmic Mail<br clear="right">
 
 [简体中文](README_zh.md)
 
@@ -16,7 +16,7 @@ This release is ad-hoc signed and is not Apple notarized. For a GitHub download 
 
 Use **Open**, press **⌘O**, or drop files into the window. Finder's **Open With → Cosmic Mail** works too. To make it the default for an email file type, use Finder's **Get Info → Open with → Change All**.
 
-Supported formats: `.eml/.mime/.emlx/.msg/.oft/.mbox/.mbx/.mbo`, Apple Mail mailbox folders, and Maildir folders. MBX files must use the MBOX format. Outlook PST/OST and Apple OLM archives are not supported in this release; export them as EML/MBOX first. Encrypted messages require a decrypted export from their original email application.
+Supported formats: `.eml/.mime/.emlx/.msg/.oft/.mbox/.mbx/.mbo`, Apple Mail mailbox folders, and Maildir folders. MBX files must use the MBOX format. Outlook PST/OST and Outlook for Mac OLM archives are not supported in this release; export them as EML/MBOX first. Encrypted messages require a decrypted export from their original email application.
 
 ## Catch email links
 

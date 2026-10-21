@@ -1,4 +1,4 @@
-# Cosmic Mail
+# <img src="docs/assets/cosmic-mail.png" width="96" align="right" alt=""> Cosmic Mail<br clear="right">
 
 [English](README.md)
 
@@ -16,7 +16,7 @@ Cosmic Mail 是一款原生 macOS 应用，用于阅读已保存的邮件，以�
 
 点击“打开”、按 **⌘O**，或将文件拖入窗口。也可在 Finder 中选择**打开方式 → Cosmic Mail**。若需将某种邮件文件默认交由本应用打开，可通过 Finder 的**显示简介 → 打开方式 → 全部更改**设置。
 
-支持格式：`.eml/.mime/.emlx/.msg/.oft/.mbox/.mbx/.mbo`、Apple Mail 邮箱文件夹和 Maildir 文件夹。MBX 文件须使用 MBOX 格式。此版本不支持 Outlook PST/OST 或 Apple OLM 存档，可先从原应用导出 EML/MBOX。加密邮件需要由原邮件应用解密导出后阅读。
+支持格式：`.eml/.mime/.emlx/.msg/.oft/.mbox/.mbx/.mbo`、Apple Mail 邮箱文件夹和 Maildir 文件夹。MBX 文件须使用 MBOX 格式。此版本不支持 Outlook PST/OST 或 Outlook for Mac OLM 存档，可先从原应用导出 EML/MBOX。加密邮件需要由原邮件应用解密导出后阅读。
 
 ## 接住邮件链接
 

@@ -30,11 +30,12 @@ func draw(_ pixels: Int) throws {
   line.lineWidth = 18
   line.lineCapStyle = .round
   color(125, 164, 189).setStroke()
-  line.stroke()
   let envelope = NSBezierPath(
     roundedRect: NSRect(x: 222, y: 268, width: 580, height: 353), xRadius: 42, yRadius: 42)
   color(246, 249, 250).setFill()
   envelope.fill()
+  color(125, 164, 189).setStroke()
+  line.stroke()
   let fold = NSBezierPath()
   fold.move(to: NSPoint(x: 230, y: 587))
   fold.line(to: NSPoint(x: 489, y: 408))
