@@ -2,6 +2,11 @@
 
 [简体中文](CHANGELOG_zh.md)
 
+## 26.1020.6 — 2026-10-20
+
+- Use native macOS menu icons for About, Open, Close all files, and Export original.
+- Move Close all files below Close while preserving its keyboard shortcut.
+
 ## 26.1020.5 — 2026-10-20
 
 - Refine the app icon for clearer letter details.

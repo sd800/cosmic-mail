@@ -1,5 +1,12 @@
 # Release verification
 
+## 26.1020.6 — 2026-10-20
+
+- Universal arm64/x86_64 release builds and strict sandbox signature verification passed.
+- The installed-app File menu places Close all files after the native Close command. Open shows the native file picker; About opens the standard macOS panel with one copyright line.
+- Menu labels use system SF Symbols without custom image assets or menu styling.
+- Only the menu smoke checks and release packaging checks were run; no parser suite or stress tests were run.
+
 ## 26.1020.5 — 2026-10-20
 
 - Generated icon matches the approved draft byte for byte; line coordinates are unchanged.

@@ -14,20 +14,26 @@ import SwiftUI
     }.defaultSize(width: 1120, height: 760)
       .commands {
         CommandGroup(replacing: .newItem) {
-          Button(L("Open…", "打开…")) { AppModel.shared.chooseFiles() }.keyboardShortcut("o")
-          Button(L("Close all files", "关闭所有文件")) { AppModel.shared.closeAll() }.keyboardShortcut(
-            "w", modifiers: [.command, .shift])
+          Button { AppModel.shared.chooseFiles() } label: {
+            Label(L("Open…", "打开…"), systemImage: "arrow.up.forward.app")
+          }.keyboardShortcut("o")
         }
         CommandGroup(after: .saveItem) {
-          Button(L("Export original…", "导出原始邮件…")) { AppModel.shared.exportOriginal() }
-            .keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.entry == nil)
+          Button { AppModel.shared.closeAll() } label: {
+            Label(L("Close all files", "关闭所有文件"), systemImage: "xmark.square")
+          }.keyboardShortcut("w", modifiers: [.command, .shift])
+          Button { AppModel.shared.exportOriginal() } label: {
+            Label(L("Export original…", "导出原始邮件…"), systemImage: "square.and.arrow.up")
+          }.keyboardShortcut("s", modifiers: [.command, .shift]).disabled(model.entry == nil)
         }
         CommandGroup(replacing: .appInfo) {
-          Button(L("About Cosmic Mail", "关于 Cosmic Mail")) {
+          Button {
             NSApp.orderFrontStandardAboutPanel(options: [
               .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"]
                 as? String ?? ""
             ])
+          } label: {
+            Label(L("About Cosmic Mail", "关于 Cosmic Mail"), systemImage: "info.circle")
           }
         }
       }

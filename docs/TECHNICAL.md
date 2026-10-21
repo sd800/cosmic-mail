@@ -11,6 +11,8 @@
 
 ## Native lifecycle
 
+Menu commands use the corresponding macOS system symbols when available, with native menu rendering and keyboard shortcuts. Custom menu artwork is not used. Close all files follows the system Close command in the File menu.
+
 Opening another document appends a separate sidebar item; earlier documents stay open, and complete unchanged file indexes are reused when reopened. Mail selection is remembered per sidebar item in RAM. Items have an individual Close file context action. Only an actual main-window close, explicit close-all, or application termination clears the session; a SwiftUI view disappearance/reparenting is not used as a document-close signal.
 
 A single main window presents opened files or the most recent captured mailto link. The standard Settings scene implements ⌘,. Open (⌘O), original export (⌘⇧S), and close-all (⌘⇧W) use native commands. File-open and URL events arrive through NSApplicationDelegate. Finder and URL-scheme registrations declare alternate viewer capability; neither silently changes system defaults.
