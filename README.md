@@ -6,6 +6,16 @@ Cosmic Mail is a native macOS app for reading saved email and catching email lin
 
 Open a message or browse an archive in a quiet, familiar Mac interface. Read in light or dark mode, inspect message details, and save individual attachments. When Cosmic Mail is your chosen email-link app, `mailto:` links open as readable, copyable details. No email account is needed.
 
+## Starting point
+
+I built Cosmic Mail to address two recurring frustrations in my own macOS workflow.
+
+**Clicking an email link is not always an intention to write.** An accidental `mailto:` click could launch Apple Mail and open a compose window. In my experience, it could also create an unwanted Hide My Email alias that remained in iCloud, gradually leaving behind unused addresses. I wanted a way to inspect and copy the link’s contents without starting a mail workflow or creating anything in the background.
+
+**Reading an email backup should be as simple as opening a file.** When I downloaded my Gmail archive as an MBOX file, I wanted to browse its messages directly, rather than set up an email account or import the archive into a mail library. Cosmic Mail treats saved email as something you can open, read, and close.
+
+These needs shaped its scope: a reader for saved mail and a deliberate stopping point for email links, without account login or sending features.
+
 ## Install
 
 Download the universal app ZIP from [Releases](https://github.com/sd800/cosmic-mail/releases), unzip it, and move **Cosmic Mail.app** to Applications. macOS 14 or later is required. Apple Silicon and Intel builds are included in the same app.
