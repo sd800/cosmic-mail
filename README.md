@@ -1,6 +1,6 @@
 # <img src="docs/assets/cosmic-mail.png" width="96" align="right" alt=""> Cosmic Mail<br clear="right">
 
-[简体中文](README_zh.md)
+[Simplified Chinese](README_zh.md)
 
 Cosmic Mail is a native macOS app for reading saved email and catching email links before they turn into unwanted compose windows.
 
