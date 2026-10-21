@@ -228,3 +228,97 @@ extension MailCoreTests {
     XCTAssertTrue(SafeHTML.safeRaster(png))
   }
 }
+
+// Small synthetic inputs only: budget exhaustion is simulated with lowered index limits.
+extension MailCoreTests {
+  func testMboxIncrementalIndexAndSmallBudgets() throws {
+    let folder = try temp()
+    let url = folder.appendingPathComponent("small.mbox")
+    let raw =
+      "From a@example.edu Mon Oct 19 12:00:00 2026\r\nSubject: First\r\nFrom: a@example.edu\r\n\r\nBody\r\nFrom b@example.edu Tue Oct 20 12:00:00 2026\r\nSubject: Second\r\n\r\nEnd"
+    try Data(raw.utf8).write(to: url)
+    var delivered: [MessageEntry] = []
+    let all = try MailReader.collection(url, batch: { delivered += $0 })
+    XCTAssertEqual(delivered.map(\.id), [0, 1])
+    XCTAssertEqual(all.entries.map(\.subject), ["First", "Second"])
+    XCTAssertEqual(try MailReader.message(all.entries[1]).plain, "End")
+    let limited = try MailReader.collection(url, limits: IndexLimits(messages: 1))
+    XCTAssertTrue(limited.indexLimitReached)
+    XCTAssertEqual(limited.entries.count, 1)
+    let memoryLimited = try MailReader.collection(
+      url, limits: IndexLimits(bytes: all.entries[0].metadataBytes))
+    XCTAssertEqual(memoryLimited.entries.count, 1)
+    XCTAssertTrue(memoryLimited.indexLimitReached)
+  }
+
+  func testMboxContentLengthAndProseSeparators() throws {
+    let folder = try temp()
+    let url = folder.appendingPathComponent("variants.mbox")
+    let body =
+      "From prose@example.edu Tue Oct 20 12:00:00 2026\nSubject: Not a real message\n\nBody\n"
+    let raw =
+      "From a@example.edu Mon Oct 19 12:00:00 2026\nSubject: First\nContent-Length: \(body.utf8.count)\n\n"
+      + body
+      + "From b@example.edu Tue Oct 20 12:00:00 2026\nSubject: Second\n\nFrom prose@example.edu Tue Oct 20 12:00:00 2026\nNot a header\nTail"
+    try Data(raw.utf8).write(to: url)
+    let box = try MailReader.collection(url)
+    XCTAssertEqual(box.entries.map(\.subject), ["First", "Second"])
+    XCTAssertTrue(try MailReader.message(box.entries[0]).plain.contains("Not a real message"))
+    XCTAssertTrue(try MailReader.message(box.entries[1]).plain.contains("Tail"))
+  }
+
+  func testMboxLongLineAcrossChunksAndCancellation() throws {
+    let folder = try temp()
+    let url = folder.appendingPathComponent("line.mbox")
+    // 129 KiB crosses a scanner chunk; this is not a large-archive or performance test.
+    let raw =
+      "From a@example.edu Mon Oct 19 12:00:00 2026\nSubject: Line\n\n"
+      + String(repeating: "x", count: 129 * 1024)
+      + "\nFrom b@example.edu Tue Oct 20 12:00:00 2026\nSubject: Next\n\nDone"
+    try Data(raw.utf8).write(to: url)
+    XCTAssertEqual(try MailReader.collection(url).entries.map(\.subject), ["Line", "Next"])
+    var stop = false
+    XCTAssertThrowsError(
+      try MailReader.collection(url, cancelled: { stop }, batch: { _ in stop = true })
+    ) {
+      XCTAssertEqual($0 as? MailError, .cancelled)
+    }
+  }
+
+  func testOversizedEntryDoesNotAbortMemoryIndex() throws {
+    let url = URL(fileURLWithPath: "/not-read.mbox")
+    let index = MemoryIndex(url: url, limits: IndexLimits(), progress: { _ in }, batch: { _ in })
+    let large = MessageEntry(
+      id: 0, subject: "Large", from: "", date: "", offset: 0,
+      length: Limits.message + 1, file: url)
+    XCTAssertTrue(index.append(large))
+    XCTAssertTrue(
+      index.append(
+        MessageEntry(
+          id: 1, subject: "Small", from: "", date: "", offset: 0,
+          length: 20, file: url)))
+    XCTAssertEqual(index.finish(kind: "MBOX").entries.count, 2)
+    XCTAssertThrowsError(try MailReader.message(large)) {
+      XCTAssertEqual($0 as? MailError, .tooLarge)
+    }
+  }
+
+  func testChangedSourceRejectedAndBackgroundSearch() throws {
+    let folder = try temp()
+    let url = folder.appendingPathComponent("source.mbox")
+    let raw = Data(
+      "From a@example.edu Mon Oct 19 12:00:00 2026\nSubject: First\nFrom: Sender\n\nBody".utf8)
+    try raw.write(to: url)
+    let box = try MailReader.collection(url)
+    XCTAssertTrue(MailReader.isCurrent(box))
+    XCTAssertEqual(try MailSearch.matching(box.entries, query: "FIRST").map(\.id), [0])
+    XCTAssertEqual(try MailSearch.matching(box.entries, query: "sender").map(\.id), [0])
+    XCTAssertThrowsError(try MailSearch.matching(box.entries, query: "first", cancelled: { true }))
+    try raw.write(to: url, options: .atomic)
+    XCTAssertFalse(MailReader.isCurrent(box))
+    XCTAssertThrowsError(try MailReader.message(box.entries[0])) {
+      XCTAssertEqual($0 as? MailError, .sourceChanged)
+    }
+    XCTAssertThrowsError(try MIME.parse(raw, cancelled: { true }))
+  }
+}

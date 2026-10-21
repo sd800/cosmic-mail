@@ -5,7 +5,21 @@ public enum MailDate {
   private static let offsetPattern = try! NSRegularExpression(
     pattern: #"(?:^|\s)([+-])(\d{2}):?(\d{2})$"#)
 
+  private static let cache: NSCache<NSString, NSString> = {
+    let value = NSCache<NSString, NSString>()
+    value.countLimit = 1024
+    value.totalCostLimit = 1024 * 1024
+    return value
+  }()
   public static func display(_ raw: String, locale: Locale = .current) -> String {
+    guard raw.utf8.count <= 4096 else { return raw }
+    let key = (locale.identifier + "\u{0}" + raw) as NSString
+    if let result = cache.object(forKey: key) { return result as String }
+    let result = formatted(raw, locale: locale)
+    cache.setObject(result as NSString, forKey: key, cost: key.length * 2 + result.utf8.count)
+    return result
+  }
+  private static func formatted(_ raw: String, locale: Locale) -> String {
     guard raw.utf8.count <= 4096, let cleaned = withoutComments(raw) else { return raw }
     let text = cleaned.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespacesAndNewlines)

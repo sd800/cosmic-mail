@@ -16,7 +16,7 @@ All source anchors become random opaque IDs. Navigation is cancelled before the 
 
 Attachments remain data until a user explicitly saves via NSSavePanel. They are never executed, automatically opened, unarchived, or written into a guessed path. Source filenames are normalized. An exported attachment may itself be unsafe in another application: saving does not certify its contents. Source messages are never modified.
 
-MIME nesting/work/part limits, CFB bounds and cycle checks, message-size limits, archive limits, and image dimension limits constrain malformed input. Indexing is cancellable; stale selections cannot replace the current message. Limits reduce resource-exhaustion risk; they are not a proof that every malicious input is harmless.
+MIME nesting/work/part limits, CFB bounds and cycle checks, message-size limits, bounded index metadata/entry counts, and image dimension limits constrain malformed input. Indexing is cancellable; stale selections cannot replace the current message. Limits reduce resource-exhaustion risk; they are not a proof that every malicious input is harmless.
 
 ## Verification and reporting
 

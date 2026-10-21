@@ -52,11 +52,10 @@ struct ContentView: View {
         if let capture = model.capture {
           CaptureView(capture: capture)
         } else if let active = model.active {
-          if active.entries.count > 1 {
-            HSplitView {
-              MessageList().frame(minWidth: 240, idealWidth: 285, maxWidth: 340)
-              MessageView().frame(minWidth: 380, maxWidth: .infinity)
-            }
+          if active.entries.count > 1 || active.isIndexing
+            || ["MBOX", "Maildir"].contains(active.kind)
+          {
+            MailReadingPanes()
           } else {
             MessageView()
           }
@@ -194,7 +193,22 @@ struct MessageList: View {
           }.padding(.vertical, 7).tag(entry.id)
         }
       }.listStyle(.inset)
+      if model.active?.indexLimitReached == true {
+        indexNotice(
+          L(
+            "Partial list: the in-memory index limit was reached. Close other archives and reopen to free space.",
+            "列表尚不完整：已达到内存索引上限。可关闭其他存档后重新打开以释放空间。"))
+      } else if model.active?.indexInterrupted == true {
+        indexNotice(
+          L(
+            "Indexing stopped. Reopen the archive to read the remaining messages.",
+            "索引已停止，重新打开存档可继续读取其余邮件。"))
+      }
     }.background(Color(nsColor: .controlBackgroundColor))
+  }
+  private func indexNotice(_ text: String) -> some View {
+    Text(text).font(.system(size: 13)).foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading).padding(12)
   }
 }
 func readableDate(_ value: String) -> String {

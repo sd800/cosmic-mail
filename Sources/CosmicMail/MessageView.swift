@@ -58,6 +58,13 @@ struct MessageView: View {
             }.fixedSize(horizontal: false, vertical: true)
           }
         }
+      } else if let entry = model.entry, entry.length > Limits.message {
+        ContentUnavailableView(
+          L("Message too large to preview", "邮件过大，暂不预览"), systemImage: "envelope.badge",
+          description: Text(
+            L(
+              "This message exceeds the 32 MiB preview limit. You can continue reading other messages in the archive.",
+              "这封邮件超过 32 MiB 预览上限，仍可正常阅读存档中的其他邮件。")))
       } else {
         ContentUnavailableView(
           L("Select a message", "选择一封邮件"), systemImage: "envelope.open",

@@ -2,6 +2,13 @@
 
 [简体中文](CHANGELOG_zh.md)
 
+## 26.1020.3 — 2026-10-20
+
+- Improve large mailbox browsing with incremental, memory-only indexing and background search.
+- Keep oversized messages from interrupting the rest of an archive, and detect changed source files.
+- Improve cancellation and resource handling without creating persistent mail caches.
+- Keep the reading divider stable when switching messages, and slightly widen the message list within the existing window.
+
 ## 26.1020.2 — 2026-10-20
 
 - Show explicit UTC offsets for email dates, preserving the sender’s stated time zone without ambiguous abbreviations.

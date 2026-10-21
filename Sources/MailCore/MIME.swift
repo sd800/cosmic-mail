@@ -49,10 +49,11 @@ public enum MIME {
     }
     return out
   }
+  private static let encodedWords = try! NSRegularExpression(
+    pattern: "=\\?([^?\\s]+)\\?([bBqQ])\\?([^?]*)\\?=")
   public static func headerText(_ value: String) -> String {
-    let expression = try! NSRegularExpression(pattern: "=\\?([^?\\s]+)\\?([bBqQ])\\?([^?]*)\\?=")
     let ns = value as NSString
-    let matches = expression.matches(in: value, range: NSRange(location: 0, length: ns.length))
+    let matches = encodedWords.matches(in: value, range: NSRange(location: 0, length: ns.length))
     var output = ""
     var cursor = 0
     var previousEncoded = false
@@ -133,7 +134,8 @@ public enum MIME {
     }
     return ""
   }
-  public static func parse(_ data: Data) throws -> MailMessage {
+  public static func parse(_ data: Data, cancelled: () -> Bool = { false }) throws -> MailMessage {
+    if cancelled() { throw MailError.cancelled }
     guard data.count <= Limits.message else { throw MailError.tooLarge }
     let envelope = split(data)
     guard !envelope.headers.isEmpty else { throw MailError.malformed }
@@ -146,12 +148,15 @@ public enum MIME {
     message.date = value("Date", in: envelope.headers)
     var count = 0
     var budget = 96 * 1024 * 1024
-    try part(data, depth: 0, count: &count, budget: &budget, message: &message)
+    try part(
+      data, depth: 0, count: &count, budget: &budget, message: &message, cancelled: cancelled)
     return message
   }
   static func part(
-    _ data: Data, depth: Int, count: inout Int, budget: inout Int, message: inout MailMessage
+    _ data: Data, depth: Int, count: inout Int, budget: inout Int, message: inout MailMessage,
+    cancelled: () -> Bool
   ) throws {
+    if cancelled() { throw MailError.cancelled }
     budget -= data.count
     guard budget >= 0 else { throw MailError.tooLarge }
     count += 1
@@ -170,6 +175,7 @@ public enum MIME {
       var start: Int?
       var position = raw.startIndex
       while position < raw.endIndex {
+        if cancelled() { throw MailError.cancelled }
         let lineEnd = raw[position...].firstIndex(of: 10).map { $0 + 1 } ?? raw.endIndex
         let line = raw[position..<lineEnd]
         if line.starts(with: marker) {
@@ -181,7 +187,7 @@ public enum MIME {
               if end > begin && raw[end - 1] == 13 { end -= 1 }
               try part(
                 Data(raw[begin..<end]), depth: depth + 1, count: &count, budget: &budget,
-                message: &message)
+                message: &message, cancelled: cancelled)
             }
             if suffix.starts(with: [45, 45]) { return }
             start = lineEnd
@@ -191,7 +197,8 @@ public enum MIME {
       }
       if let begin = start, begin < raw.endIndex {
         try part(
-          Data(raw[begin...]), depth: depth + 1, count: &count, budget: &budget, message: &message)
+          Data(raw[begin...]), depth: depth + 1, count: &count, budget: &budget, message: &message,
+          cancelled: cancelled)
       }
       return
     }

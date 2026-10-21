@@ -1,7 +1,7 @@
 import Foundation
 
-public enum MailError: Error, LocalizedError {
-  case tooLarge, malformed, unsupported, tooMany, cancelled
+public enum MailError: Error, LocalizedError, Equatable {
+  case tooLarge, malformed, unsupported, tooMany, cancelled, sourceChanged
   public var errorDescription: String? {
     switch self {
     case .tooLarge: return "The file exceeds the safe reading limit."
@@ -9,13 +9,14 @@ public enum MailError: Error, LocalizedError {
     case .unsupported: return "This file format is not supported."
     case .tooMany: return "This archive contains too many messages to open safely."
     case .cancelled: return "Opening was cancelled."
+    case .sourceChanged: return "The source file changed. Reopen it to update the index."
     }
   }
 }
 public enum Limits {
   public static let message = 32 * 1024 * 1024
-  public static let archive = 1024 * 1024 * 1024
-  public static let messages = 50_000
+  public static let messages = 200_000
+  public static let indexBytes = 64 * 1024 * 1024
   public static let headers = 256 * 1024
   public static let parts = 500
   public static let rendered = 4 * 1024 * 1024
@@ -55,12 +56,62 @@ public struct MessageEntry: Identifiable, Sendable {
   public var offset: UInt64
   public var length: Int
   public var file: URL
+  public var revision: FileRevision? = nil
+  public var metadataBytes: Int {
+    MemoryLayout<Self>.stride + 160 + subject.utf8.count + from.utf8.count + date.utf8.count
+  }
 }
 public struct MailCollection: Identifiable, Sendable {
   public var id = UUID()
   public var url: URL
   public var entries: [MessageEntry]
   public var kind: String
+  public var isIndexing = false
+  public var indexInterrupted = false
+  public var indexLimitReached = false
+  public var metadataBytes: Int = 0
+  public init(
+    url: URL, entries: [MessageEntry], kind: String, isIndexing: Bool = false,
+    indexInterrupted: Bool = false, indexLimitReached: Bool = false, metadataBytes: Int = 0
+  ) {
+    self.url = url
+    self.entries = entries
+    self.kind = kind
+    self.isIndexing = isIndexing
+    self.indexInterrupted = indexInterrupted
+    self.indexLimitReached = indexLimitReached
+    self.metadataBytes = metadataBytes
+  }
+}
+
+/// A bounded in-memory index; tests can lower these budgets without making large fixtures.
+public struct IndexLimits: Sendable {
+  public var messages: Int
+  public var bytes: Int
+  public init(messages: Int = Limits.messages, bytes: Int = Limits.indexBytes) {
+    self.messages = max(0, min(messages, Limits.messages))
+    self.bytes = max(0, min(bytes, Limits.indexBytes))
+  }
+}
+
+public enum MailSearch {
+  public static func matching(
+    _ entries: [MessageEntry], query: String, cancelled: () -> Bool = { false }
+  ) throws -> [MessageEntry] {
+    let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return entries }
+    var result: [MessageEntry] = []
+    for (position, entry) in entries.enumerated() {
+      if position % 128 == 0, cancelled() { throw MailError.cancelled }
+      if entry.subject.localizedCaseInsensitiveContains(text)
+        || entry.from.localizedCaseInsensitiveContains(text)
+      {
+        result.append(entry)
+      }
+    }
+    if cancelled() { throw MailError.cancelled }
+    return result
+  }
 }
 public struct MailtoCapture: Sendable, Equatable {
   public var to: String = ""

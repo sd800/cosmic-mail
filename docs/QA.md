@@ -1,5 +1,13 @@
 # Release verification
 
+## 26.1020.3 — 2026-10-20
+
+- 11 focused, small-input tests passed: incremental MBOX batches, low simulated index budgets, Content-Length/prose separators, cancellation, changed sources/RAM index validity, search, Maildir symlink filtering, MIME alternatives, and date formatting.
+- No stress tests or large-archive benchmarks were run. The largest generated test input was about 129 KiB to cross one scanner-chunk boundary. Oversized-message handling was verified using metadata only, without creating a large file.
+- Optimized arm64/x86_64 builds and strict sandbox signature verification passed.
+- Installed-app smoke check used the existing two-message synthetic Reading.mbox: HTML/attachment and plain-text switching, expanded headers, search/clear, and unchanged reading-divider position. No real mail was used.
+- Default message-list width is 310 pt. App window dimensions are unchanged.
+
 ## 26.1020.2 — 2026-10-20
 
 - Three focused date regressions passed: numeric offsets with ambiguous comments, fractional/zero offsets and English/Chinese formatting, and malformed input without guessed offsets.

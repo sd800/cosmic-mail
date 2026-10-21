@@ -1,10 +1,36 @@
+import Darwin
 import Foundation
+
+/// Identity of the opened source, not a bookmark or persistent cache.
+public struct FileRevision: Sendable, Equatable {
+  var device: Int32
+  var inode: UInt64
+  var size: Int64
+  var seconds: Int
+  var nanoseconds: Int
+
+  static func capture(_ file: FileHandle) throws -> Self {
+    var value = stat()
+    guard fstat(file.fileDescriptor, &value) == 0, value.st_size >= 0 else {
+      throw MailError.malformed
+    }
+    return Self(
+      device: value.st_dev, inode: value.st_ino, size: value.st_size,
+      seconds: value.st_mtimespec.tv_sec, nanoseconds: value.st_mtimespec.tv_nsec)
+  }
+  func verify(_ file: FileHandle) throws {
+    guard try Self.capture(file) == self else { throw MailError.sourceChanged }
+  }
+}
 
 public enum MailReader {
   public static let extensions = ["eml", "emlx", "msg", "oft", "mbox", "mbx", "mbo", "mime"]
   public static func collection(
-    _ url: URL, cancelled: () -> Bool = { false }, progress: (Int) -> Void = { _ in }
+    _ url: URL, cancelled: @escaping () -> Bool = { false },
+    progress: @escaping (Int) -> Void = { _ in },
+    limits: IndexLimits = IndexLimits(), batch: @escaping ([MessageEntry]) -> Void = { _ in }
   ) throws -> MailCollection {
+    if cancelled() { throw MailError.cancelled }
     var directory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) else {
       throw MailError.malformed
@@ -12,157 +38,334 @@ public enum MailReader {
     if directory.boolValue {
       let mbox = url.appendingPathComponent("mbox")
       if FileManager.default.fileExists(atPath: mbox.path) {
-        var result = try indexMbox(mbox, cancelled: cancelled, progress: progress)
+        var result = try indexMbox(
+          mbox, cancelled: cancelled, progress: progress, limits: limits, batch: batch)
         result.url = url
         return result
       }
-      var files: [URL] = []
+      let index = MemoryIndex(url: url, limits: limits, progress: progress, batch: batch)
+      // Enumeration does not materialize/sort the entire directory before indexing.
       for sub in ["cur", "new"] {
         let folder = url.appendingPathComponent(sub)
-        if let items = try? FileManager.default.contentsOfDirectory(
-          at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
-          options: [.skipsHiddenFiles])
-        {
-          files += items
+        guard
+          let files = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])
+        else { continue }
+        for case let file as URL in files {
+          if cancelled() { throw MailError.cancelled }
+          let info = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+          if info.isRegularFile != true || info.isSymbolicLink == true { continue }
+          let handle = try FileHandle(forReadingFrom: file)
+          defer { try? handle.close() }
+          let revision = try FileRevision.capture(handle)
+          let fields = try headerFields(handle, cancelled: cancelled).fields
+          try revision.verify(handle)
+          let item = makeEntry(fields, file, index.count, 0, Int(revision.size), revision)
+          if !index.append(item) { return index.finish(kind: "Maildir") }
         }
       }
-      guard !files.isEmpty, files.count <= Limits.messages else { throw MailError.unsupported }
-      var entries: [MessageEntry] = []
-      for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-        if cancelled() { throw MailError.cancelled }
-        let info = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-        if info.isRegularFile != true || info.isSymbolicLink == true { continue }
-        let size = try length(file)
-        guard size <= Limits.message else { throw MailError.tooLarge }
-        entries.append(try entry(file, id: entries.count, offset: 0, length: size))
-        if entries.count % 100 == 0 { progress(entries.count) }
-      }
-      return MailCollection(url: url, entries: entries, kind: "Maildir")
+      guard index.count > 0 else { throw MailError.unsupported }
+      return index.finish(kind: "Maildir")
     }
     let ext = url.pathExtension.lowercased()
-    let size = try length(url)
     if ["mbox", "mbx", "mbo"].contains(ext) {
-      return try indexMbox(url, cancelled: cancelled, progress: progress)
+      return try indexMbox(
+        url, cancelled: cancelled, progress: progress, limits: limits, batch: batch)
     }
-    guard extensions.contains(ext), size > 0 else { throw MailError.unsupported }
-    guard size <= Limits.message else { throw MailError.tooLarge }
-    let data = try read(url, offset: 0, count: size)
+    guard extensions.contains(ext) else { throw MailError.unsupported }
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    let revision = try FileRevision.capture(handle)
+    let size = Int(revision.size)
+    guard size > 0, size <= Limits.message else { throw MailError.tooLarge }
+    let fields: [Header]
     if ["msg", "oft"].contains(ext) {
+      let data = try read(handle, count: size, cancelled: cancelled)
       let mail = try Outlook.parse(data)
-      return MailCollection(
-        url: url,
-        entries: [
-          MessageEntry(
-            id: 0, subject: mail.subject, from: mail.from, date: mail.date, offset: 0, length: size,
-            file: url)
-        ], kind: ext.uppercased())
+      fields = [
+        Header(name: "Subject", value: mail.subject), Header(name: "From", value: mail.from),
+        Header(name: "Date", value: mail.date),
+      ]
+    } else if ext == "emlx" {
+      let data = try read(handle, count: size, cancelled: cancelled)
+      fields = MIME.split(try emlx(data, extension: ext)).headers
+    } else {
+      fields = try headerFields(handle, cancelled: cancelled).fields
     }
-    let content = try emlx(data, extension: ext)
-    let fields = MIME.split(content).headers
+    try revision.verify(handle)
     guard !fields.isEmpty else { throw MailError.malformed }
-    return MailCollection(
-      url: url, entries: [makeEntry(fields, url, 0, 0, size)], kind: ext.uppercased())
+    let index = MemoryIndex(url: url, limits: limits, progress: progress, batch: batch)
+    _ = index.append(makeEntry(fields, url, 0, 0, size, revision))
+    return index.finish(kind: ext.uppercased())
   }
-  public static func message(_ entry: MessageEntry) throws -> MailMessage {
-    guard entry.length <= Limits.message else { throw MailError.tooLarge }
-    let data = try read(entry.file, offset: entry.offset, count: entry.length)
+
+  /// Reuse an already-open complete RAM index only while its source identity still matches.
+  public static func isCurrent(_ collection: MailCollection) -> Bool {
+    guard collection.kind != "Maildir", !collection.isIndexing,
+      !collection.indexInterrupted, !collection.indexLimitReached,
+      let entry = collection.entries.first, let revision = entry.revision,
+      let file = try? FileHandle(forReadingFrom: entry.file)
+    else { return false }
+    defer { try? file.close() }
+    return (try? FileRevision.capture(file)) == revision
+  }
+
+  public static func message(
+    _ entry: MessageEntry, cancelled: () -> Bool = { false }
+  ) throws -> MailMessage {
+    let data = try source(entry, cancelled: cancelled)
+    let mail: MailMessage
     if ["msg", "oft"].contains(entry.file.pathExtension.lowercased()) {
-      return try Outlook.parse(data)
+      mail = try Outlook.parse(data)
+    } else {
+      mail = try MIME.parse(
+        emlx(data, extension: entry.file.pathExtension.lowercased()), cancelled: cancelled)
     }
-    return try MIME.parse(emlx(data, extension: entry.file.pathExtension.lowercased()))
+    if cancelled() { throw MailError.cancelled }
+    return mail
   }
   public static func original(_ entry: MessageEntry) throws -> Data {
-    try emlx(
-      read(entry.file, offset: entry.offset, count: entry.length),
-      extension: entry.file.pathExtension.lowercased())
+    try emlx(source(entry, cancelled: { false }), extension: entry.file.pathExtension.lowercased())
+  }
+  private static func source(_ entry: MessageEntry, cancelled: () -> Bool) throws -> Data {
+    guard entry.length >= 0, entry.length <= Limits.message else { throw MailError.tooLarge }
+    let file = try FileHandle(forReadingFrom: entry.file)
+    defer { try? file.close() }
+    try entry.revision?.verify(file)
+    try file.seek(toOffset: entry.offset)
+    let data = try read(file, count: entry.length, cancelled: cancelled)
+    try entry.revision?.verify(file)
+    return data
+  }
+  private static func read(_ file: FileHandle, count: Int, cancelled: () -> Bool) throws -> Data {
+    var data = Data()
+    data.reserveCapacity(count)
+    while data.count < count {
+      if cancelled() { throw MailError.cancelled }
+      let chunk = try file.read(upToCount: min(128 * 1024, count - data.count)) ?? Data()
+      guard !chunk.isEmpty else { throw MailError.malformed }
+      data.append(chunk)
+    }
+    return data
   }
   static func emlx(_ data: Data, extension ext: String) throws -> Data {
     guard ext == "emlx" else { return data }
     guard let end = data.firstIndex(of: 10), end < 30,
       let count = Int(
         String(decoding: data[..<end], as: UTF8.self).trimmingCharacters(
-          in: .whitespacesAndNewlines)), count > 0, count <= Limits.message,
-      count <= data.count - end - 1
+          in: .whitespacesAndNewlines)),
+      count > 0, count <= Limits.message, count <= data.count - end - 1
     else { throw MailError.malformed }
     return Data(data[(end + 1)..<(end + 1 + count)])
   }
-  static func length(_ url: URL) throws -> Int {
-    Int(try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? UInt64 ?? 0)
-  }
-  static func read(_ url: URL, offset: UInt64, count: Int) throws -> Data {
-    guard count >= 0, count <= Limits.message else { throw MailError.tooLarge }
-    let file = try FileHandle(forReadingFrom: url)
-    defer { try? file.close() }
-    try file.seek(toOffset: offset)
-    let data = try file.read(upToCount: count) ?? Data()
-    guard data.count == count else { throw MailError.malformed }
-    return data
-  }
-  static func makeEntry(_ fields: [Header], _ url: URL, _ id: Int, _ offset: UInt64, _ length: Int)
-    -> MessageEntry
-  {
+  private static func makeEntry(
+    _ fields: [Header], _ url: URL, _ id: Int, _ offset: UInt64, _ length: Int,
+    _ revision: FileRevision
+  ) -> MessageEntry {
     MessageEntry(
-      id: id, subject: MIME.headerText(MIME.value("Subject", in: fields)),
-      from: MIME.headerText(MIME.value("From", in: fields)), date: MIME.value("Date", in: fields),
-      offset: offset, length: length, file: url)
+      id: id, subject: String(MIME.headerText(MIME.value("Subject", in: fields)).prefix(1024)),
+      from: String(MIME.headerText(MIME.value("From", in: fields)).prefix(1024)),
+      date: String(MIME.value("Date", in: fields).prefix(256)), offset: offset, length: length,
+      file: url, revision: revision)
   }
-  static func entry(_ url: URL, id: Int, offset: UInt64, length: Int) throws -> MessageEntry {
-    let data = try read(url, offset: offset, count: min(length, Limits.headers))
-    return makeEntry(MIME.split(data).headers, url, id, offset, length)
+
+  private static let envelope = try! NSRegularExpression(
+    pattern: #"^From (?:\S+ (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s|-(?:\s|$))"#)
+  private static func isEnvelope(_ line: ArchiveLine) -> Bool {
+    guard !line.truncated, line.prefix.count <= 1000,
+      line.prefix.starts(with: [70, 114, 111, 109, 32])
+    else { return false }
+    let text = String(decoding: line.prefix, as: UTF8.self)
+    return envelope.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
   }
-  static func indexMbox(_ url: URL, cancelled: () -> Bool, progress: (Int) -> Void) throws
-    -> MailCollection
-  {
-    let size = try length(url)
-    guard size > 0, size <= Limits.archive else { throw MailError.tooLarge }
+
+  private static func headerFields(
+    _ file: FileHandle, cancelled: @escaping () -> Bool
+  ) throws -> (fields: [Header], end: UInt64?) {
+    try headers(ArchiveLines(file, cancelled: cancelled))
+  }
+  private static func headers(_ lines: ArchiveLines) throws -> (fields: [Header], end: UInt64?) {
+    var data = Data()
+    var end: UInt64?
+    while data.count < Limits.headers,
+      let line = try lines.next(limit: Limits.headers - data.count)
+    {
+      let bytes = line.prefix
+      if !line.truncated && (bytes == Data([10]) || bytes == Data([13, 10])) {
+        end = line.end
+        break
+      }
+      // Stop on non-header content; allow the scanner to reconsider a following envelope.
+      if !bytes.starts(with: [32]), !bytes.starts(with: [9]), !bytes.contains(58) {
+        lines.putBack(line)
+        break
+      }
+      data.append(bytes)
+      if line.truncated { break }
+    }
+    return (MIME.split(data).headers, end)
+  }
+  private static func indexMbox(
+    _ url: URL, cancelled: @escaping () -> Bool, progress: @escaping (Int) -> Void,
+    limits: IndexLimits,
+    batch: @escaping ([MessageEntry]) -> Void
+  ) throws -> MailCollection {
     let file = try FileHandle(forReadingFrom: url)
     defer { try? file.close() }
-    var pending = Data()
-    var fileOffset: UInt64 = 0
+    let revision = try FileRevision.capture(file)
+    guard revision.size > 0 else { throw MailError.malformed }
+    let lines = ArchiveLines(file, cancelled: cancelled)
+    let index = MemoryIndex(url: url, limits: limits, progress: progress, batch: batch)
     var start: UInt64?
-    var entries: [MessageEntry] = []
-    let envelope = try! NSRegularExpression(
-      pattern: "^From (?:\\S+ (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) |-(?: |$))")
-    func append(_ end: UInt64) throws {
-      guard let begin = start, end > begin else { return }
-      let count = Int(end - begin)
-      guard count <= Limits.message else { throw MailError.tooLarge }
-      guard entries.count < Limits.messages else { throw MailError.tooMany }
-      entries.append(try entry(url, id: entries.count, offset: begin, length: count))
-      if entries.count % 100 == 0 { progress(entries.count) }
+    var fields: [Header] = []
+    var bodyEnd: UInt64 = 0
+    func append(_ end: UInt64) -> Bool {
+      guard let begin = start, end > begin else { return true }
+      return index.append(makeEntry(fields, url, index.count, begin, Int(end - begin), revision))
     }
+    while let line = try lines.next(limit: 1000) {
+      guard line.start >= bodyEnd, isEnvelope(line) else { continue }
+      let candidate = try headers(lines)
+      // A From-looking line in prose is not enough to split a message.
+      guard
+        candidate.fields.contains(where: {
+          ["from", "subject", "date", "to", "message-id", "content-type"].contains(
+            $0.name.lowercased())
+        })
+      else { continue }
+      if !append(line.start) { break }
+      start = line.end
+      fields = candidate.fields
+      bodyEnd = 0
+      let lengths = fields.filter {
+        $0.name.caseInsensitiveCompare("Content-Length") == .orderedSame
+      }
+      if lengths.count == 1, let end = candidate.end,
+        let count = UInt64(lengths[0].value), end <= UInt64(revision.size),
+        count <= UInt64(revision.size) - end
+      {
+        bodyEnd = end + count
+      }
+    }
+    if !index.limitReached { _ = append(UInt64(revision.size)) }
+    if start == nil {
+      try file.seek(toOffset: 0)
+      let candidate = try headerFields(file, cancelled: cancelled).fields
+      guard candidate.contains(where: { ["from", "subject"].contains($0.name.lowercased()) }) else {
+        throw MailError.malformed
+      }
+      _ = index.append(makeEntry(candidate, url, 0, 0, Int(revision.size), revision))
+    }
+    if cancelled() { throw MailError.cancelled }
+    try revision.verify(file)
+    return index.finish(kind: "MBOX")
+  }
+}
+
+/// Holds only bounded line prefixes, even for huge unbroken attachment/body lines.
+private struct ArchiveLine {
+  var start: UInt64
+  var end: UInt64
+  var prefix: Data
+  var truncated: Bool
+}
+private final class ArchiveLines {
+  private let file: FileHandle
+  private let cancelled: () -> Bool
+  private var chunk = Data()
+  private var cursor = 0
+  private var offset: UInt64 = 0
+  private var saved: ArchiveLine?
+  init(_ file: FileHandle, cancelled: @escaping () -> Bool) {
+    self.file = file
+    self.cancelled = cancelled
+  }
+  func putBack(_ line: ArchiveLine) { saved = line }
+  func next(limit: Int) throws -> ArchiveLine? {
+    if cancelled() { throw MailError.cancelled }
+    if let line = saved {
+      saved = nil
+      return line
+    }
+    let start = offset
+    var prefix = Data()
     while true {
-      if cancelled() { throw MailError.cancelled }
-      let chunk = try file.read(upToCount: 128 * 1024) ?? Data()
-      if chunk.isEmpty { break }
-      pending.append(chunk)
-      var consumed = 0
-      while let newline = pending[consumed...].firstIndex(of: 10) {
-        let end = newline + 1
-        let line = pending[consumed..<end]
-        if line.starts(with: [70, 114, 111, 109, 32]), line.count <= 1000 {
-          let text = String(decoding: line, as: UTF8.self)
-          if envelope.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil {
-            try append(fileOffset + UInt64(consumed))
-            start = fileOffset + UInt64(end)
-          }
+      if cursor == chunk.count {
+        if cancelled() { throw MailError.cancelled }
+        chunk = try file.read(upToCount: 128 * 1024) ?? Data()
+        cursor = 0
+        if chunk.isEmpty {
+          return offset == start
+            ? nil
+            : ArchiveLine(
+              start: start, end: offset, prefix: prefix,
+              truncated: UInt64(prefix.count) < offset - start)
         }
-        consumed = end
       }
-      if consumed > 0 {
-        pending = Data(pending.dropFirst(consumed))
-        fileOffset += UInt64(consumed)
+      let amount = chunk.withUnsafeBytes { bytes -> Int in
+        let base = bytes.baseAddress!.advanced(by: cursor)
+        if let found = memchr(base, 10, chunk.count - cursor) {
+          return base.distance(to: UnsafeRawPointer(found)) + 1
+        }
+        return chunk.count - cursor
       }
-      if pending.count > Limits.message { throw MailError.tooLarge }
+      let keep = min(amount, max(0, limit - prefix.count))
+      if keep > 0 { prefix.append(chunk[cursor..<(cursor + keep)]) }
+      cursor += amount
+      offset += UInt64(amount)
+      if chunk[cursor - 1] == 10 {
+        return ArchiveLine(
+          start: start, end: offset, prefix: prefix,
+          truncated: UInt64(prefix.count) < offset - start)
+      }
     }
-    try append(UInt64(size))
-    if entries.isEmpty {
-      guard size <= Limits.message else { throw MailError.malformed }
-      let candidate = try entry(url, id: 0, offset: 0, length: size)
-      guard !candidate.subject.isEmpty || !candidate.from.isEmpty else { throw MailError.malformed }
-      entries = [candidate]
+  }
+}
+
+final class MemoryIndex {
+  private let url: URL
+  private let limits: IndexLimits
+  private let progress: (Int) -> Void
+  private let batch: ([MessageEntry]) -> Void
+  private var entries: [MessageEntry] = []
+  private var bytes = 0
+  private var delivered = 0
+  private var lastDelivery = ProcessInfo.processInfo.systemUptime
+  private(set) var limitReached = false
+  var count: Int { entries.count }
+  init(
+    url: URL, limits: IndexLimits, progress: @escaping (Int) -> Void,
+    batch: @escaping ([MessageEntry]) -> Void
+  ) {
+    self.url = url
+    self.limits = limits
+    self.progress = progress
+    self.batch = batch
+  }
+  func append(_ entry: MessageEntry) -> Bool {
+    guard entries.count < limits.messages, entry.metadataBytes <= limits.bytes - bytes else {
+      limitReached = true
+      return false
+    }
+    entries.append(entry)
+    bytes += entry.metadataBytes
+    if entries.count == 1 || ProcessInfo.processInfo.systemUptime - lastDelivery >= 0.15 {
+      deliver()
+    }
+    return true
+  }
+  private func deliver() {
+    if delivered < entries.count {
+      batch(Array(entries[delivered...]))
+      delivered = entries.count
     }
     progress(entries.count)
-    return MailCollection(url: url, entries: entries, kind: "MBOX")
+    lastDelivery = ProcessInfo.processInfo.systemUptime
+  }
+  func finish(kind: String) -> MailCollection {
+    deliver()
+    return MailCollection(
+      url: url, entries: entries, kind: kind, indexLimitReached: limitReached, metadataBytes: bytes)
   }
 }
