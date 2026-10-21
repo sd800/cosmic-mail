@@ -48,5 +48,3 @@ Cosmic Mail 的设计源于一个简单的想法：**打开一条链接或一个
 ```
 
 安装包输出至 `dist/`。详见[技术文档](docs/TECHNICAL.md)和[安全设计](docs/SECURITY.md)。
-
-© 2026 Songming.org
