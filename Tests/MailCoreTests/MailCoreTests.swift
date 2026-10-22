@@ -83,9 +83,9 @@ final class MailCoreTests: XCTestCase {
     XCTAssertTrue(page.contains("default-src 'none'"))
     XCTAssertTrue(page.contains("script-src 'none'"))
     XCTAssertTrue(
-      result.page(dark: true, backgroundRGB: 0x1E1E1E).contains("style=\"--paper:#1E1E1E\""))
+      result.page(dark: true, backgroundRGB: 0x1E1E1E).contains("style=\"--paper:#1E1E1E;"))
     XCTAssertTrue(
-      result.page(dark: false, backgroundRGB: 0xFFFFFF).contains("style=\"--paper:#FFFFFF\""))
+      result.page(dark: false, backgroundRGB: 0xFFFFFF).contains("style=\"--paper:#FFFFFF;"))
     XCTAssertNil(SafeHTML.safeLink("https://user:secret@example.edu"))
     XCTAssertNil(SafeHTML.safeLink("x-apple.systempreferences:privacy"))
   }
@@ -320,5 +320,269 @@ extension MailCoreTests {
       XCTAssertEqual($0 as? MailError, .sourceChanged)
     }
     XCTAssertThrowsError(try MIME.parse(raw, cancelled: { true }))
+  }
+}
+
+extension MailCoreTests {
+  func testChineseCharsetRecoveryAndSplitHeaderWords() throws {
+    // GBK's 鎔 is outside GB2312. An illegal byte must not corrupt valid neighbors.
+    XCTAssertEqual(
+      MIME.decode(Data([0xc4, 0xe3, 0xe6, 0x67, 0xff, 0xba, 0xc3]), charset: "gb2312"), "你鎔�好")
+    XCTAssertEqual(MIME.decode(Data([0xe4, 0xbd, 0xa0, 0xff, 0xe5, 0xa5, 0xbd])), "你�好")
+    XCTAssertEqual(MIME.headerText("=?UTF-8?B?5L0=?=\r\n =?utf-8?B?oOWlvQ==?="), "你好")
+    XCTAssertEqual(MIME.headerText("=?gb2312?Q?=C4?= =?GB2312?Q?=E3=BA=C3?="), "你好")
+    XCTAssertEqual(
+      MIME.headerText("=?utf-8?Q?Hello?= plain =?utf-8?Q?world?="), "Hello plain world")
+    let html =
+      Data("<meta charset=gb2312><p>".utf8) + Data([0xc4, 0xe3, 0xba, 0xc3]) + Data("</p>".utf8)
+    XCTAssertTrue(MIME.decodeHTML(html).contains("你好"))
+  }
+  func testSegmentedFilenamesAndMultipleInlineBodies() throws {
+    XCTAssertEqual(
+      MIME.filename([
+        Header(
+          name: "Content-Disposition",
+          value: "attachment; filename*0*=GBK''%C4%; filename*1*=E3%BA%C3.doc")
+      ]), "你好.doc")
+    XCTAssertEqual(
+      MIME.filename([
+        Header(
+          name: "Content-Disposition", value: "attachment; filename*0=hello; filename*1=world.txt")
+      ]), "helloworld.txt")
+    let raw = """
+      Subject: Segments
+      Content-Type: multipart/mixed; boundary=x
+
+      --x
+      Content-Type: text/html
+
+      <p>Before</p>
+      --x
+      Content-Type: message/rfc822
+      Content-Disposition: attachment
+
+      Subject: Forwarded
+
+      Inside
+      --x
+      Content-Type: text/html
+
+      <p>After</p>
+      --x
+      Content-Type: multipart/alternative; boundary=y
+
+      --y
+      Content-Type: text/plain
+
+      Same content
+      --y
+      Content-Type: text/html
+
+      <b>Same content</b>
+      --y--
+      --x--
+      """
+    let mail = try MIME.parse(Data(raw.utf8))
+    XCTAssertTrue(mail.html.contains("Before"))
+    XCTAssertTrue(mail.html.contains("After"))
+    XCTAssertEqual(mail.html.components(separatedBy: "Same content").count, 2)
+    XCTAssertEqual(mail.attachments.first?.name, "Attached message.eml")
+    XCTAssertTrue(mail.attachments.first?.canPreview == true)
+    XCTAssertEqual(try MIME.parse(mail.attachments[0].bytes).subject, "Forwarded")
+    let long = safeFilename(String(repeating: "邮件", count: 150) + ".eml")
+    XCTAssertLessThanOrEqual(long.utf8.count, 220)
+    XCTAssertTrue(long.hasSuffix(".eml"))
+  }
+  func testPassiveFormattingAndUnclosedInertWrappers() {
+    var mail = MailMessage()
+    mail.html = """
+      <head><style>.news {color:#003366;width:600px} @media (max-width: 500px) {.news {width:100%}}
+      @font-face {font-family:x;src:url(https://bad.test/font)}
+      .bad{position:fixed;z-index:999;background:url(https://bad.test/pixel);margin-x}body{color:red}
+      </style></head><form><button>Kept<button><video>Fallback
+      <div hidden>Preheader</div><table class="news" width="600" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="50%" style="color:red;border-top:1px solid #aaaaaa;font-family:'FangSong',serif;font-size:16px;padding:12px">Don&rsquo;t &hellip; &eacute;&zwnj;</td></tr></table>
+      <p style="position:fixed;background-image:url(file:///private);color:expression(alert(1));padding-x}body{color:red">End</p>
+      """
+    let result = SafeHTML.render(mail)
+    XCTAssertTrue(result.body.contains("Kept"))
+    XCTAssertTrue(result.body.contains("Fallback"))
+    XCTAssertTrue(result.body.contains("Don’t … é\u{200c}"))
+    XCTAssertTrue(result.body.contains("width:50%"))
+    XCTAssertTrue(result.body.contains("display:none!important"))
+    XCTAssertTrue(result.body.contains("font-family:"))
+    XCTAssertTrue(result.body.contains("border-top:1px solid"))
+    XCTAssertTrue(result.stylesheet.contains(".mail-content .m-news"))
+    XCTAssertTrue(result.stylesheet.contains("@media (max-width: 500px)"))
+    for bad in [
+      "url(", "file:", "https:", "@font-face", "expression(", "position:", "z-index", "}body{",
+      "<button", "<form", "<video",
+    ] {
+      XCTAssertFalse((result.body + result.stylesheet).contains(bad), bad)
+    }
+    XCTAssertFalse(result.page(dark: false).contains("td,th{padding:7px"))
+  }
+  func testBodySearchDateOrderAndStreamingExport() throws {
+    let dir = try temp()
+    let file = dir.appendingPathComponent("search.mbox")
+    let raw = """
+      From a@example.edu Mon Oct 19 12:00:00 2026
+      Subject: Older
+      To: Recipient <reader@example.edu>
+      Date: 19 Oct 2026 12:00:00 +0000
+      Content-Type: text/html
+
+      <p>Needle &eacute; in body</p>
+      From b@example.edu Tue Oct 20 12:00:00 2026
+      Subject: Newer
+      Date: 20 Oct 2026 12:00:00 +0000
+
+      Other content
+      """
+    try Data(raw.utf8).write(to: file)
+    let entries = try MailReader.collection(file).entries
+    XCTAssertEqual(MailSearch.ordered(entries).map(\.subject), ["Newer", "Older"])
+    XCTAssertEqual(try MailSearch.scan(entries, query: "needle é").entries.map(\.id), [0])
+    XCTAssertEqual(try MailSearch.scan(entries, query: "reader@example.edu").entries.map(\.id), [0])
+    XCTAssertThrowsError(try MailSearch.scan(entries, query: "notfound", cancelled: { true }))
+    let output = dir.appendingPathComponent("copy.eml")
+    try MailReader.exportOriginal(entries[0], to: output, chunkSize: 7)
+    XCTAssertEqual(try Data(contentsOf: output), try MailReader.original(entries[0]))
+    XCTAssertThrowsError(try MailReader.exportOriginal(entries[0], to: file))
+    XCTAssertEqual(try Data(contentsOf: file), Data(raw.utf8))
+    try Data("Keep existing destination".utf8).write(to: output)
+    XCTAssertThrowsError(try MailReader.exportOriginal(entries[0], to: output, cancelled: { true }))
+    XCTAssertEqual(try String(contentsOf: output), "Keep existing destination")
+    XCTAssertThrowsError(try MailReader.validateDestination(file, protecting: [file]))
+    let alias = dir.appendingPathComponent("alias.mbox")
+    try FileManager.default.linkItem(at: file, to: alias)
+    XCTAssertThrowsError(try MailReader.validateDestination(alias, protecting: [file]))
+    XCTAssertNoThrow(try MailReader.validateDestination(output, protecting: [file]))
+    XCTAssertFalse(
+      try FileManager.default.contentsOfDirectory(atPath: dir.path).contains {
+        $0.hasPrefix(".CosmicMail-")
+      })
+  }
+}
+
+extension MailCoreTests {
+  /// A tiny regular-sector CFB fixture; no external mail, OLE activation, or large archives.
+  private func msgFixture(_ streams: [String: Data]) -> Data {
+    let storage = Set(
+      streams.keys.flatMap { path -> [String] in
+        let components = path.split(separator: "/").map(String.init)
+        return (1..<components.count).map { components.prefix($0).joined(separator: "/") }
+      })
+    let paths = [""] + (Array(storage) + Array(streams.keys)).sorted()
+    let directoryCount = (paths.count + 3) / 4
+    var data = Data(repeating: 0, count: (2 + directoryCount + streams.count * 8) * 512)
+    func u16(_ p: Int, _ v: UInt16) {
+      data[p] = UInt8(v & 255)
+      data[p + 1] = UInt8(v >> 8)
+    }
+    func u32(_ p: Int, _ v: UInt32) {
+      for b in 0..<4 { data[p + b] = UInt8(truncatingIfNeeded: v >> (b * 8)) }
+    }
+    data.replaceSubrange(0..<8, with: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])
+    u16(26, 3)
+    u16(28, 0xfffe)
+    u16(30, 9)
+    u16(32, 6)
+    u32(44, 1)
+    u32(48, 1)
+    u32(56, 4096)
+    u32(60, 0xffff_fffe)
+    u32(68, 0xffff_fffe)
+    for p in stride(from: 76, to: 512, by: 4) { u32(p, 0xffff_ffff) }
+    u32(76, 0)
+    for p in stride(from: 512, to: 1024, by: 4) { u32(p, 0xffff_ffff) }
+    u32(512, 0xffff_fffd)
+    for id in 1...directoryCount {
+      u32(512 + id * 4, id == directoryCount ? 0xffff_fffe : UInt32(id + 1))
+    }
+    var next = 1 + directoryCount
+    for (index, path) in paths.enumerated() {
+      let directory = index == 0 || storage.contains(path)
+      let p = 1024 + index * 128
+      let name = index == 0 ? "Root Entry" : String(path.split(separator: "/").last!)
+      let encoded = Data((name + "\0").utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] })
+      data.replaceSubrange(p..<p + encoded.count, with: encoded)
+      u16(p + 64, UInt16(encoded.count))
+      data[p + 66] = index == 0 ? 5 : directory ? 1 : 2
+      u32(p + 68, 0xffff_ffff)
+      u32(p + 72, 0xffff_ffff)
+      u32(p + 76, 0xffff_ffff)
+      u32(p + 116, 0xffff_fffe)
+      let parent = path.split(separator: "/").dropLast().joined(separator: "/")
+      let siblings = paths.indices.filter {
+        $0 > 0 && paths[$0].split(separator: "/").dropLast().joined(separator: "/") == parent
+      }
+      if let position = siblings.firstIndex(of: index), position + 1 < siblings.count {
+        u32(p + 72, UInt32(siblings[position + 1]))
+      }
+      if directory {
+        let children = paths.indices.filter {
+          $0 > 0 && paths[$0].split(separator: "/").dropLast().joined(separator: "/") == path
+        }
+        if let child = children.first { u32(p + 76, UInt32(child)) }
+      } else {
+        let bytes = streams[path]!
+        precondition(bytes.count <= 4096)
+        let start = next
+        next += 8
+        u32(p + 116, UInt32(start))
+        u32(p + 120, 4096)
+        for id in start..<next { u32(512 + id * 4, id + 1 == next ? 0xffff_fffe : UInt32(id + 1)) }
+        data.replaceSubrange((start + 1) * 512..<(start + 1) * 512 + bytes.count, with: bytes)
+      }
+    }
+    return data
+  }
+  private func msgProperties(header: Int = 32, _ values: [(UInt32, UInt64)]) -> Data {
+    var data = Data(repeating: 0, count: header)
+    for (tag, value) in values {
+      data.append(contentsOf: (0..<4).map { UInt8(truncatingIfNeeded: tag >> ($0 * 8)) })
+      data.append(contentsOf: [0, 0, 0, 0])
+      data.append(contentsOf: (0..<8).map { UInt8(truncatingIfNeeded: value >> ($0 * 8)) })
+    }
+    return data
+  }
+  func testMSGCodepagesDatesAndVisibleEmbeddedAttachments() throws {
+    let nested = "__attach_version1.0_#00000000/"
+    let ole = "__attach_version1.0_#00000001/"
+    let missing = "__attach_version1.0_#00000002/"
+    let ticks = UInt64((1_772_323_200 + 11_644_473_600) * 10_000_000)
+    let streams: [String: Data] = [
+      "__properties_version1.0": msgProperties([
+        (0x3ffd_0003, 936), (0x3fde_0003, 936), (0x0039_0040, ticks),
+      ]),
+      "__substg1.0_0037001e": Data([0xc4, 0xe3, 0xba, 0xc3]),
+      "__substg1.0_0c1a001e": Data([0xc4, 0xe3]),
+      "__recip_version1.0_#00000000/__properties_version1.0": msgProperties(
+        header: 8, [(0x0c15_0003, 1)]),
+      "__recip_version1.0_#00000000/__substg1.0_3003001e": Data("reader@example.edu".utf8),
+      "__substg1.0_10130102": Data("<p>".utf8) + Data([0xc4, 0xe3, 0xba, 0xc3]) + Data("</p>".utf8),
+      nested + "__properties_version1.0": msgProperties(header: 8, [(0x3705_0003, 5)]),
+      nested + "__substg1.0_3701000d/__properties_version1.0": msgProperties(
+        header: 24, [(0x0e06_0040, ticks)]),
+      nested + "__substg1.0_3701000d/__substg1.0_0037001e": Data([0xc4, 0xe3]),
+      ole + "__properties_version1.0": msgProperties(header: 8, [(0x3705_0003, 6)]),
+      missing + "__properties_version1.0": msgProperties(header: 8, [(0x3705_0003, 1)]),
+    ]
+    let mail = try Outlook.parse(msgFixture(streams))
+    XCTAssertEqual(mail.subject, "你好")
+    XCTAssertEqual(mail.from, "你")
+    XCTAssertEqual(mail.to, "reader@example.edu")
+    XCTAssertTrue(mail.html.contains("你好"))
+    XCTAssertFalse(mail.date.isEmpty)
+    XCTAssertEqual(MailDate.timestamp(mail.date), 1_772_323_200)
+    XCTAssertEqual(mail.attachments.count, 3)
+    XCTAssertEqual(mail.attachments[0].embedded.first?.subject, "你")
+    XCTAssertEqual(
+      MailDate.timestamp(mail.attachments[0].embedded.first?.date ?? ""), 1_772_323_200)
+    XCTAssertTrue(mail.attachments[0].canPreview)
+    XCTAssertTrue(mail.attachments[1].isOLE)
+    XCTAssertFalse(mail.attachments[1].available)
+    XCTAssertFalse(mail.attachments[2].available)
   }
 }

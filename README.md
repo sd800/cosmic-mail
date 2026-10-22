@@ -36,7 +36,7 @@ Recipients, Cc/Bcc, subject, and message text appear in a normal window with cop
 
 ## Privacy and safety
 
-Your mail stays on your Mac. Messages are read from the files you open, without an imported library or cloud upload. Remote images and other remote content are blocked. Email scripts and embedded objects do not run, attachments never open automatically, and website links require confirmation. Only reading preferences are saved between launches.
+Your mail stays on your Mac. Messages are read from the files you open, without an imported library or cloud upload. Remote images and other remote content are blocked. Email scripts and embedded objects do not run, attachments never open automatically, and links inside messages offer copying without opening another app. Only reading preferences are saved between launches.
 
 ## Development
 

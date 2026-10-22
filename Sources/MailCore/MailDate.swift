@@ -72,6 +72,31 @@ public enum MailDate {
     return prefix + " " + zoneLabel
   }
 
+  public static func timestamp(_ raw: String) -> TimeInterval? {
+    guard raw.utf8.count <= 4096, let cleaned = withoutComments(raw) else { return nil }
+    let text = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    let key = "CosmicMail.DateParser"
+    let parser =
+      Thread.current.threadDictionary[key] as? DateFormatter
+      ?? {
+        let value = DateFormatter()
+        value.locale = Locale(identifier: "en_US_POSIX")
+        value.calendar = Calendar(identifier: .gregorian)
+        value.timeZone = TimeZone(secondsFromGMT: 0)
+        value.isLenient = false
+        Thread.current.threadDictionary[key] = value
+        return value
+      }()
+    for pattern in [
+      "EEE, d MMM yyyy HH:mm:ss Z", "d MMM yyyy HH:mm:ss Z", "EEE, d MMM yyyy HH:mm Z",
+      "d MMM yyyy HH:mm Z", "EEE, d MMM yy HH:mm:ss Z", "yyyy-MM-dd'T'HH:mm:ss.SSSXXXXX",
+      "yyyy-MM-dd'T'HH:mm:ssXXXXX",
+    ] {
+      parser.dateFormat = pattern
+      if let value = parser.date(from: text) { return value.timeIntervalSince1970 }
+    }
+    return nil
+  }
   private static func withoutComments(_ raw: String) -> String? {
     var output = ""
     var depth = 0

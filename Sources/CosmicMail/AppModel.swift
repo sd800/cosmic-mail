@@ -30,11 +30,21 @@ final class Cancellation: @unchecked Sendable {
   @Published var reading = false
   @Published var progress = 0
   @Published var query = "" { didSet { scheduleSearch() } }
+  @Published var newestFirst = true { didSet { scheduleSearch() } }
+  @Published private(set) var searchUnreadable = 0
+  @Published private(set) var searching = false
+  private var displayedQuery = ""
+  private var memoryMessages: [UUID: MailMessage] = [:]
+  private var memoryRendered: [UUID: RenderedMail] = [:]
+  private var memoryAttachments: [UUID: UUID] = [:]
+  private var memoryOriginals: [UUID: Data] = [:]
+  private var orderedCollection: UUID?
   @Published private var filteredEntries: [MessageEntry] = []
   @Published var showDetails = false
   @Published var selectionVersion = UUID()
   @Published private(set) var readRequest = UUID()
   @Published private(set) var readerFailed = false
+  private let linkPopover = LinkPopoverPresenter()
   private var displayedCollection: UUID?
   private var displayedEntry: Int?
   var currentMessageReady: Bool {
@@ -53,8 +63,11 @@ final class Cancellation: @unchecked Sendable {
   private var rememberedSelections: [UUID: Int] = [:]
   var active: MailCollection? { collections.first { $0.id == selectedCollection } }
   var entries: [MessageEntry] {
-    query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      ? active?.entries ?? [] : filteredEntries
+    orderedCollection == selectedCollection ? filteredEntries : active?.entries ?? []
+  }
+  var canExportOriginal: Bool {
+    guard let id = selectedCollection, entry != nil else { return false }
+    return memoryMessages[id] == nil || memoryOriginals[id] != nil
   }
   var entry: MessageEntry? {
     guard let values = active?.entries, let id = selectedEntry, values.indices.contains(id),
@@ -72,11 +85,21 @@ final class Cancellation: @unchecked Sendable {
     searchTask = nil
     searchRefresh = false
     let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, let collectionID = selectedCollection else {
+    guard let collectionID = selectedCollection else {
       filteredEntries = []
+      orderedCollection = nil
+      searchUnreadable = 0
+      searching = false
+      displayedQuery = ""
       return
     }
-    if restart { filteredEntries = [] }
+    if restart { searchUnreadable = 0 }
+    if text != displayedQuery {
+      filteredEntries = []
+      orderedCollection = collectionID
+      displayedQuery = text
+    }
+    searching = !text.isEmpty
     let operation = Cancellation()
     searchToken = operation
     searchTask = Task {
@@ -84,14 +107,21 @@ final class Cancellation: @unchecked Sendable {
         try await Task.sleep(for: .milliseconds(restart ? 180 : 0))
         guard !operation.cancelled, selectedCollection == collectionID else { return }
         let values = active?.entries ?? []
-        let result = try await ArchiveWork.search(values, query: text, token: operation)
+        let result = try await ArchiveWork.search(
+          values, query: text, newestFirst: newestFirst,
+          scopes: Array(scopes.values), token: operation)
         guard !operation.cancelled, selectedCollection == collectionID else { return }
-        filteredEntries = result
+        filteredEntries = result.entries
+        orderedCollection = collectionID
+        searchUnreadable = result.unreadable
+        searching = false
         searchTask = nil
         if searchRefresh { scheduleSearch(restart: false) }
       } catch {
         guard !operation.cancelled else { return }
         searchTask = nil
+        searching = false
+        self.error = errorText(error)
       }
     }
   }
@@ -175,6 +205,7 @@ final class Cancellation: @unchecked Sendable {
             collections.append(collection)
             scopes[source.url] = source
           }
+          if selectedCollection == id { scheduleSearch(restart: false) }
           if preferredOpeningID == id {
             preferredOpeningID = nil
             selectedCollection = id
@@ -221,7 +252,7 @@ final class Cancellation: @unchecked Sendable {
       capture = nil
       query = ""
       select(values.first?.id)
-    } else if selectedCollection == collection.id, !query.isEmpty {
+    } else if selectedCollection == collection.id {
       scheduleSearch(restart: false)
     }
   }
@@ -255,6 +286,10 @@ final class Cancellation: @unchecked Sendable {
     let wasSelected = selectedCollection == id
     collections.remove(at: position)
     rememberedSelections[id] = nil
+    memoryMessages[id] = nil
+    memoryOriginals[id] = nil
+    memoryRendered[id] = nil
+    memoryAttachments = memoryAttachments.filter { $0.value != id }
     if wasSelected {
       let next = collections.isEmpty ? nil : collections[min(position, collections.count - 1)].id
       selectCollection(next)
@@ -262,6 +297,7 @@ final class Cancellation: @unchecked Sendable {
     releaseUnusedScopes()
   }
   func select(_ id: Int?) {
+    linkPopover.dismiss()
     if id == selectedEntry, currentMessageReady, error == nil { return }
     readToken?.cancel()
     selectedEntry = id
@@ -270,6 +306,17 @@ final class Cancellation: @unchecked Sendable {
     guard let entry, entry.length <= Limits.message else {
       clearPresentation()
       reading = false
+      return
+    }
+    if let id = selectedCollection, let mail = memoryMessages[id] {
+      message = mail
+      rendered = memoryRendered[id]
+      displayedCollection = id
+      displayedEntry = entry.id
+      selectionVersion = UUID()
+      showDetails = false
+      reading = false
+      readerFailed = false
       return
     }
     let operation = Cancellation()
@@ -308,6 +355,7 @@ final class Cancellation: @unchecked Sendable {
     error = explanation
   }
   private func clearPresentation() {
+    linkPopover.dismiss()
     readerFailed = false
     message = nil
     rendered = nil
@@ -347,54 +395,96 @@ final class Cancellation: @unchecked Sendable {
     query = ""
     scopes = [:]
     rememberedSelections = [:]
+    memoryMessages = [:]
+    memoryOriginals = [:]
+    memoryRendered = [:]
+    memoryAttachments = [:]
   }
   func exportOriginal() {
-    guard !reading else { return }
-    guard let entry else { return }
+    guard !reading, canExportOriginal, let entry else { return }
+    let collectionID = selectedCollection
     let panel = NSSavePanel()
     panel.nameFieldStringValue =
       ["msg", "oft"].contains(entry.file.pathExtension.lowercased())
       ? entry.file.lastPathComponent
       : safeFilename(entry.subject.isEmpty ? "Message" : entry.subject) + ".eml"
-    if panel.runModal() == .OK, let url = panel.url {
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do { try MailReader.validateDestination(url, protecting: collections.map(\.url)) } catch {
+      self.error = errorText(error)
+      return
+    }
+    if let id = collectionID, let data = memoryOriginals[id] {
+      do { try data.write(to: url, options: .atomic) } catch { self.error = errorText(error) }
+      return
+    }
+    let scope = active.flatMap { scopes[$0.url] }
+    let operation = Cancellation()
+    Task {
+      do { try await ArchiveWork.export(entry, to: url, scope: scope, token: operation) } catch {
+        self.error = errorText(error)
+      }
+    }
+  }
+  func previewAttachment(_ attachment: MailAttachment) {
+    guard currentMessageReady, attachment.available, attachment.canPreview,
+      message?.attachments.contains(where: { $0.id == attachment.id }) == true
+    else { return }
+    if let existing = memoryAttachments[attachment.id],
+      collections.contains(where: { $0.id == existing })
+    {
+      selectCollection(existing)
+      return
+    }
+    guard memoryMessages.count < 20 else {
+      error = errorText(MailError.tooMany)
+      return
+    }
+    let identity = selectionVersion
+    let operation = Cancellation()
+    Task {
       do {
-        let data = try MailReader.original(entry)
-        try data.write(to: url, options: .atomic)
+        let result = try await ArchiveWork.attachment(attachment, token: operation)
+        guard currentMessageReady, identity == selectionVersion else { return }
+        let name = safeFilename(attachment.name)
+        let url = URL(string: "cosmic-mail-message://" + UUID().uuidString + "/")!
+          .appendingPathComponent(name)
+        let mail = result.0
+        let entry = MessageEntry(
+          id: 0, subject: mail.subject, from: mail.from, date: mail.date,
+          offset: 0, length: attachment.bytes.count, file: url, recipients: mail.to + " " + mail.cc,
+          timestamp: MailDate.timestamp(mail.date))
+        let collection = MailCollection(url: url, entries: [entry], kind: "Message")
+        memoryMessages[collection.id] = mail
+        memoryRendered[collection.id] = result.1
+        memoryAttachments[attachment.id] = collection.id
+        if attachment.embedded.isEmpty { memoryOriginals[collection.id] = attachment.bytes }
+        collections.append(collection)
+        selectCollection(collection.id)
       } catch { self.error = errorText(error) }
     }
   }
   func saveAttachment(_ attachment: MailAttachment) {
-    guard currentMessageReady,
+    guard currentMessageReady, attachment.available, attachment.embedded.isEmpty,
       message?.attachments.contains(where: { $0.id == attachment.id }) == true
     else { return }
     let panel = NSSavePanel()
     panel.nameFieldStringValue = safeFilename(attachment.name)
     if panel.runModal() == .OK, let url = panel.url {
-      do { try attachment.bytes.write(to: url, options: .atomic) } catch {
+      do {
+        try MailReader.validateDestination(url, protecting: collections.map(\.url))
+        try attachment.bytes.write(to: url, options: .atomic)
+      } catch {
         self.error = errorText(error)
       }
     }
   }
-  func external(_ raw: String, from identity: UUID) {
-    guard identity == selectionVersion, currentMessageReady else { return }
-    guard let safe = SafeHTML.safeLink(raw), let url = URL(string: safe) else { return }
-    if url.scheme?.lowercased() == "mailto" {
-      receive(url)
-      return
-    }
-    let alert = NSAlert()
-    alert.messageText = L("Open this link?", "打开此链接？")
-    alert.informativeText = String(safe.prefix(2048))
-    alert.addButton(withTitle: L("Copy link", "复制链接"))
-    let web = ["https", "http"].contains(url.scheme?.lowercased() ?? "")
-    if web { alert.addButton(withTitle: L("Open in browser", "在浏览器中打开")) }
-    alert.addButton(withTitle: L("Cancel", "取消"))
-    let result = alert.runModal()
-    if result == .alertFirstButtonReturn {
-      copyText(safe)
-    } else if web && result == .alertSecondButtonReturn {
-      NSWorkspace.shared.open(url)
-    }
+  func external(
+    _ raw: String, from identity: UUID, in view: NSView? = nil, at rectangle: NSRect = .zero
+  ) {
+    guard identity == selectionVersion, currentMessageReady, let view,
+      let capture = CapturedMailLink(raw)
+    else { return }
+    linkPopover.show(capture, in: view, at: rectangle)
   }
   func errorText(_ error: Error) -> String {
     if let mail = error as? MailError {
@@ -412,6 +502,10 @@ final class Cancellation: @unchecked Sendable {
           "This file contains more messages or parts than can be opened safely.",
           "文件包含过多邮件或 MIME 部分，无法安全打开。")
       case .cancelled: return L("Opening cancelled.", "已取消打开。")
+      case .unsafeDestination:
+        return L(
+          "Choose another destination to keep open source files unchanged.",
+          "请选择其他保存位置，以保留正在打开的源文件。")
       case .sourceChanged:
         return L(
           "The source file changed. Reopen it to update the message list.",

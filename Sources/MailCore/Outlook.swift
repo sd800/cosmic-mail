@@ -149,13 +149,51 @@ struct Compound {
 public enum Outlook {
   public static func parse(_ data: Data) throws -> MailMessage {
     guard data.count <= Limits.message else { throw MailError.tooLarge }
-    let c = try Compound(data)
-    func string(_ property: String, prefix: String = "") throws -> String {
-      if let d = try c.stream(prefix + "__substg1.0_" + property + "001f") {
-        return MIME.decode(d, charset: "utf-16le").trimmingCharacters(in: .controlCharacters)
+    let compound = try Compound(data)
+    var budget = 96 * 1024 * 1024
+    var parts = 0
+    return try message(
+      compound, prefix: "", inheritedCharset: nil, depth: 0, budget: &budget, parts: &parts)
+  }
+  private static func properties(_ c: Compound, prefix: String, header: Int) throws -> [UInt32:
+    UInt64]
+  {
+    guard let data = try c.stream(prefix + "__properties_version1.0"), data.count >= header else {
+      return [:]
+    }
+    guard data.count <= Limits.headers else { throw MailError.tooMany }
+    var result: [UInt32: UInt64] = [:]
+    for offset in stride(from: header, to: data.count - 15, by: 16) {
+      let tag = (0..<4).reduce(UInt32(0)) { $0 | UInt32(data[offset + $1]) << ($1 * 8) }
+      result[tag] = (0..<8).reduce(UInt64(0)) { $0 | UInt64(data[offset + 8 + $1]) << ($1 * 8) }
+    }
+    return result
+  }
+  private static func message(
+    _ c: Compound, prefix: String, inheritedCharset: String?, depth: Int,
+    budget: inout Int, parts: inout Int
+  ) throws -> MailMessage {
+    guard depth <= 8 else { throw MailError.tooMany }
+    let props = try properties(c, prefix: prefix, header: prefix.isEmpty ? 32 : 24)
+    let charset =
+      MailEncoding.charset(codepage: props[0x3ffd_0003])
+      ?? MailEncoding.charset(codepage: props[0x3fde_0003]) ?? inheritedCharset ?? "windows-1252"
+    func stream(_ path: String) throws -> Data? {
+      let data = try c.stream(path)
+      budget -= data?.count ?? 0
+      guard budget >= 0 else { throw MailError.tooLarge }
+      return data
+    }
+    func string(_ property: String, at container: String? = nil, encoding: String? = nil) throws
+      -> String
+    {
+      let path = (container ?? prefix) + "__substg1.0_" + property
+      if let data = try stream(path + "001f") {
+        return MIME.decode(data, charset: "utf-16le").trimmingCharacters(in: .controlCharacters)
       }
-      if let d = try c.stream(prefix + "__substg1.0_" + property + "001e") {
-        return MIME.decode(d, charset: "windows-1252").trimmingCharacters(in: .controlCharacters)
+      if let data = try stream(path + "001e") {
+        return MIME.decode(data, charset: encoding ?? charset).trimmingCharacters(
+          in: .controlCharacters)
       }
       return ""
     }
@@ -164,39 +202,99 @@ public enum Outlook {
     mail.headers = MIME.split(Data((rawHeaders + "\r\n\r\n").utf8)).headers
     mail.subject = try string("0037")
     mail.from = try string("0c1a")
-    let address = try string("5d01")
+    var address = try string("5d01")
+    if address.isEmpty { address = try string("0c1f") }
     if !address.isEmpty { mail.from += mail.from.isEmpty ? address : " <\(address)>" }
     mail.to = try string("0e04")
     mail.cc = try string("0e03")
-    mail.plain = try string("1000")
-    if let html = try c.stream("__substg1.0_10130102") { mail.html = MIME.decode(html) }
+    mail.plain = try string(
+      "1000", encoding: MailEncoding.charset(codepage: props[0x3fde_0003]) ?? charset)
+    if let html = try stream(prefix + "__substg1.0_10130102") {
+      mail.html = MIME.decodeHTML(html, charset: MailEncoding.charset(codepage: props[0x3fde_0003]))
+        .trimmingCharacters(in: .controlCharacters)
+    }
     if mail.html.isEmpty { mail.html = try string("1013") }
     if mail.subject.isEmpty {
       mail.subject = MIME.headerText(MIME.value("Subject", in: mail.headers))
     }
     if mail.from.isEmpty { mail.from = MIME.headerText(MIME.value("From", in: mail.headers)) }
     mail.date = MIME.value("Date", in: mail.headers)
-    let prefixes = Set(
-      c.paths.keys.filter { $0.hasPrefix("__attach_version1.0_") }.compactMap {
-        $0.split(separator: "/").first.map(String.init)
-      })
-    var attachmentBytes = 0
-    for prefix in prefixes.sorted().prefix(500) {
-      guard let bytes = try c.stream(prefix + "/__substg1.0_37010102") else { continue }
-      attachmentBytes += bytes.count
-      guard attachmentBytes <= Limits.message else { throw MailError.tooLarge }
-      let long = try string("3707", prefix: prefix + "/")
-      let short = try string("3704", prefix: prefix + "/")
-      mail.attachments.append(
-        MailAttachment(
-          name: safeFilename(long.isEmpty ? short : long),
-          type: try string("370e", prefix: prefix + "/"), bytes: bytes,
-          contentID: try string("3712", prefix: prefix + "/")))
+    if MailDate.timestamp(mail.date) == nil, let ticks = props[0x0039_0040] ?? props[0x0e06_0040],
+      ticks > 0
+    {
+      let seconds = Double(ticks / 10_000_000) - 11_644_473_600
+      if seconds >= -11_644_473_600 && seconds <= 253_402_300_799 {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "d MMM yyyy HH:mm:ss Z"
+        mail.date = formatter.string(from: Date(timeIntervalSince1970: seconds))
+      }
     }
-    guard !mail.subject.isEmpty || !mail.plain.isEmpty || !mail.html.isEmpty || !mail.from.isEmpty
+    let children = c.paths.keys.filter { $0.hasPrefix(prefix) }.compactMap { key -> String? in
+      let rest = String(key.dropFirst(prefix.count))
+      return rest.contains("/") ? nil : rest
+    }.sorted()
+    if mail.to.isEmpty || mail.cc.isEmpty {
+      var to: [String] = []
+      var cc: [String] = []
+      for child in children where child.hasPrefix("__recip_version1.0_") {
+        let location = prefix + child + "/"
+        let recipient = try properties(c, prefix: location, header: 8)
+        let kind = recipient[0x0c15_0003] ?? 1
+        guard kind == 1 || kind == 2 else { continue }
+        let name = try string("3001", at: location)
+        var email = try string("39fe", at: location)
+        if email.isEmpty { email = try string("3003", at: location) }
+        let label = name.isEmpty ? email : email.isEmpty ? name : "\(name) <\(email)>"
+        if !label.isEmpty {
+          if kind == 1 { to.append(label) } else { cc.append(label) }
+        }
+      }
+      if mail.to.isEmpty { mail.to = to.joined(separator: ", ") }
+      if mail.cc.isEmpty { mail.cc = cc.joined(separator: ", ") }
+    }
+    for child in children where child.hasPrefix("__attach_version1.0_") {
+      parts += 1
+      guard parts <= Limits.parts else { throw MailError.tooMany }
+      let location = prefix + child + "/"
+      let props = try properties(c, prefix: location, header: 8)
+      let method = props[0x3705_0003] ?? 1
+      let long = try string("3707", at: location)
+      let short = try string("3704", at: location)
+      let name = safeFilename(long.isEmpty ? short : long)
+      var attachment = MailAttachment(
+        name: name, type: try string("370e", at: location), bytes: Data(),
+        contentID: try string("3712", at: location))
+      let nested = location + "__substg1.0_3701000d/"
+      if method == 5 || c.paths[location + "__substg1.0_3701000d"] != nil && method != 6 {
+        do {
+          attachment.embedded = [
+            try message(
+              c, prefix: nested, inheritedCharset: charset, depth: depth + 1,
+              budget: &budget, parts: &parts)
+          ]
+          if name == "Attachment" { attachment.name = "Attached message" }
+          attachment.type = "message/rfc822"
+        } catch { attachment.available = false }
+      } else {
+        attachment.isOLE = method == 6
+        do {
+          if let data = try stream(location + "__substg1.0_37010102") {
+            attachment.bytes = data
+          } else {
+            attachment.available = false
+          }
+        } catch { attachment.available = false }
+      }
+      mail.attachments.append(attachment)
+    }
+    guard
+      !mail.subject.isEmpty || !mail.plain.isEmpty || !mail.html.isEmpty || !mail.from.isEmpty
+        || !mail.attachments.isEmpty
     else { throw MailError.malformed }
-    mail.plain = String(mail.plain.prefix(Limits.rendered))
-    mail.html = String(mail.html.prefix(Limits.rendered))
+    mail.plain = String(decoding: mail.plain.utf8.prefix(Limits.rendered), as: UTF8.self)
+    mail.html = String(decoding: mail.html.utf8.prefix(Limits.rendered), as: UTF8.self)
     return mail
   }
 }

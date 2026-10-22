@@ -85,6 +85,40 @@ final class ReadingTransitionTests: XCTestCase {
     XCTAssertFalse(model.currentMessageReady)
     model.closeAll()
   }
+  @MainActor func testCapturedLinksAreTextOnlyAndCopyable() throws {
+    let website = try XCTUnwrap(CapturedMailLink("https://example.edu/?q=%3Cscript%3E"))
+    XCTAssertEqual(website.copyValue, "https://example.edu/?q=%3Cscript%3E")
+    let email = try XCTUnwrap(CapturedMailLink("mailto:reader%40example.edu"))
+    XCTAssertEqual(email.copyValue, "reader@example.edu")
+    let telephone = try XCTUnwrap(CapturedMailLink("tel:+12015551234"))
+    XCTAssertEqual(telephone.copyValue, "+12015551234")
+    let sms = try XCTUnwrap(CapturedMailLink("sms:+12015551234?body=Hello%20there"))
+    XCTAssertEqual(sms.fields.last?.value, "Hello there")
+    XCTAssertNil(CapturedMailLink("javascript:alert(1)"))
+    XCTAssertNil(CapturedMailLink("file:///private/example"))
+  }
+  @MainActor func testAttachedMailOpensInRAMAndRetainsParent() async throws {
+    let (_, box) = try fixture()
+    let model = AppModel()
+    model.collections = [box]
+    model.selectedCollection = box.id
+    model.select(0)
+    try await waitUntil { !model.reading }
+    let bytes = Data("Subject: Child\nFrom: child@example.edu\n\nAttached body".utf8)
+    let attachment = MailAttachment(
+      name: "Forwarded.eml", type: "message/rfc822", bytes: bytes, contentID: "")
+    model.message?.attachments = [attachment]
+    model.previewAttachment(attachment)
+    try await waitUntil { model.collections.count == 2 }
+    XCTAssertEqual(model.message?.subject, "Child")
+    XCTAssertEqual(model.collections.first?.id, box.id)
+    XCTAssertEqual(model.active?.url.scheme, "cosmic-mail-message")
+    XCTAssertTrue(model.canExportOriginal)
+    model.selectCollection(box.id)
+    try await waitUntil { !model.reading }
+    XCTAssertEqual(model.message?.subject, "First")
+    model.closeAll()
+  }
   @MainActor func testLocalShellIsReusedAndAppearanceDoesNotResetText() async throws {
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
@@ -151,6 +185,50 @@ final class ReadingTransitionTests: XCTestCase {
     XCTAssertEqual(state?["selection"] as? String, "")
     XCTAssertEqual(state?["font"] as? String, "20px")
     XCTAssertEqual(state?["csp"] as? Bool, true)
+    var newsletter = MailMessage()
+    newsletter.html = """
+      <style>.reply{color:#cc0000;border-top:2px solid #aaaaaa;font-size:18px}
+      .layout{width:500px;background-color:#ffffff} @media (max-width: 480px) {.layout{width:100%}}
+      </style><div hidden>Preview filler</div><table class="layout" cellpadding="0" border="0"><tr><td>
+      <p class="reply">Red reply &rsquo;</p><table><tr><td>Nested layout</td></tr></table></td></tr></table>
+      <a href="mailto:reader@example.edu">Email</a><a href="tel:+12015551234">Phone</a>
+      <img src="https://bad.test/track"><script>window.bad=true</script>
+      """
+    request.identity = UUID()
+    request.scale = 1
+    request.rendered = SafeHTML.render(newsletter)
+    coordinator.desired = request
+    coordinator.apply()
+    try await waitUntil { coordinator.applied?.identity == request.identity }
+    let layout =
+      try await script(
+        web,
+        #"return {color:getComputedStyle(document.querySelector('.m-reply')).color, size:getComputedStyle(document.querySelector('.m-reply')).fontSize, border:getComputedStyle(document.querySelector('td')).borderTopWidth, hidden:getComputedStyle(document.querySelector('[style*="display:none"]')).display, width:document.querySelector('table').getBoundingClientRect().width, images:document.querySelectorAll('img').length, scripts:document.scripts.length, unsafe:window.bad===true, links:[...document.links].map(x=>x.protocol)};"#
+      ) as? [String: Any]
+    XCTAssertEqual(layout?["color"] as? String, "rgb(204, 0, 0)")
+    XCTAssertEqual(layout?["size"] as? String, "18px")
+    XCTAssertEqual(layout?["border"] as? String, "0px")
+    XCTAssertEqual(layout?["hidden"] as? String, "none")
+    XCTAssertEqual(layout?["width"] as? Double, 500)
+    XCTAssertEqual(layout?["images"] as? Int, 0)
+    XCTAssertEqual(layout?["scripts"] as? Int, 0)
+    XCTAssertEqual(layout?["unsafe"] as? Bool, false)
+    XCTAssertEqual(layout?["links"] as? [String], ["cosmic-link:", "cosmic-link:"])
+    request.dark = true
+    request.paperRGB = 0x1e1e1e
+    coordinator.desired = request
+    coordinator.apply()
+    try await waitUntil { request.matches(coordinator.applied) }
+    let darkColor =
+      try await script(web, "return getComputedStyle(document.querySelector('.m-reply')).color;")
+      as? String
+    XCTAssertNotEqual(darkColor, "rgb(204, 0, 0)")
+    web.frame.size.width = 360
+    try await Task.sleep(for: .milliseconds(30))
+    let width =
+      try await script(web, "return document.querySelector('table').getBoundingClientRect().width;")
+      as? Double
+    XCTAssertLessThanOrEqual(width ?? 1000, 360)
     MailWebView.dismantleNSView(web, coordinator: coordinator)
   }
   @MainActor func testOpeningFilesAppendsAndRestoresSelectedMessage() async throws {

@@ -92,15 +92,62 @@ enum ArchiveWork {
       }
     }
   }
+  static func attachment(_ attachment: MailAttachment, token: Cancellation) async throws -> (
+    MailMessage, RenderedMail
+  ) {
+    try await withCheckedThrowingContinuation { continuation in
+      reading.async {
+        continuation.resume(
+          with: Result {
+            if token.cancelled { throw MailError.cancelled }
+            let mail: MailMessage
+            if let embedded = attachment.embedded.first {
+              mail = embedded
+            } else if attachment.type.lowercased() == "application/vnd.ms-outlook"
+              || ["msg", "oft"].contains((attachment.name as NSString).pathExtension.lowercased())
+            {
+              mail = try Outlook.parse(attachment.bytes)
+            } else {
+              mail = try MIME.parse(attachment.bytes, cancelled: { token.cancelled })
+            }
+            let rendered = SafeHTML.render(mail)
+            if token.cancelled { throw MailError.cancelled }
+            return (mail, rendered)
+          })
+      }
+    }
+  }
+  static func export(
+    _ entry: MessageEntry, to destination: URL, scope: ScopedMailFile?, token: Cancellation
+  ) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      reading.async {
+        continuation.resume(
+          with: Result {
+            try withExtendedLifetime(scope) {
+              try MailReader.exportOriginal(entry, to: destination, cancelled: { token.cancelled })
+            }
+          })
+      }
+    }
+  }
   static func search(
-    _ entries: [MessageEntry], query: String, token: Cancellation
-  ) async throws -> [MessageEntry] {
+    _ entries: [MessageEntry], query: String, newestFirst: Bool, scopes: [ScopedMailFile],
+    token: Cancellation
+  ) async throws -> MailSearch.Results {
     try await withCheckedThrowingContinuation { continuation in
       searching.async {
         continuation.resume(
           with: Result {
             if token.cancelled { throw MailError.cancelled }
-            return try MailSearch.matching(entries, query: query, cancelled: { token.cancelled })
+            return try withExtendedLifetime(scopes) {
+              var result = try MailSearch.scan(
+                entries, query: query, cancelled: { token.cancelled })
+              if token.cancelled { throw MailError.cancelled }
+              result.entries = MailSearch.ordered(result.entries, newestFirst: newestFirst)
+              if token.cancelled { throw MailError.cancelled }
+              return result
+            }
           })
       }
     }

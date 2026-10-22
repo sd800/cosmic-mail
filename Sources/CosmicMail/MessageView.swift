@@ -19,7 +19,10 @@ struct MessageView: View {
         rendered: model.rendered ?? RenderedMail(body: "", links: [:]),
         plain: model.message?.plain ?? "", identity: model.selectionVersion,
         dark: scheme == .dark, scale: prefs.textSize / 16,
-        interactive: model.currentMessageReady, open: model.external
+        interactive: model.currentMessageReady,
+        open: { raw, identity, view, rectangle in
+          model.external(raw, from: identity, in: view, at: rectangle)
+        }
       )
       .padding(.horizontal, 28)
       .overlay {
@@ -34,7 +37,11 @@ struct MessageView: View {
             HStack(spacing: 10) {
               ForEach(mail.attachments) { attachment in
                 Button {
-                  model.saveAttachment(attachment)
+                  if attachment.canPreview {
+                    model.previewAttachment(attachment)
+                  } else {
+                    model.saveAttachment(attachment)
+                  }
                 } label: {
                   HStack(spacing: 10) {
                     Image(systemName: "paperclip").font(.system(size: 16)).foregroundStyle(
@@ -43,12 +50,20 @@ struct MessageView: View {
                       Text(attachment.name).font(.system(size: 14, weight: .medium)).lineLimit(1)
                         .truncationMode(.middle)
                       Text(
-                        ByteCountFormatter.string(
-                          fromByteCount: Int64(attachment.bytes.count), countStyle: .file)
+                        !attachment.available
+                          ? L("Unavailable in this message", "无法读取此附件")
+                          : !attachment.embedded.isEmpty
+                            ? L("Attached message", "附加邮件")
+                            : attachment.isOLE
+                              ? L("Embedded object · Save only", "嵌入对象 · 仅供保存")
+                              : ByteCountFormatter.string(
+                                fromByteCount: Int64(attachment.bytes.count), countStyle: .file)
                       )
                       .font(.system(size: 13)).foregroundStyle(.secondary)
                     }
-                    Image(systemName: "square.and.arrow.down").font(.system(size: 15))
+                    Image(
+                      systemName: attachment.canPreview ? "envelope.open" : "square.and.arrow.down"
+                    ).font(.system(size: 15))
                       .foregroundStyle(.secondary)
                   }
                   .padding(.horizontal, 12).frame(
@@ -60,7 +75,22 @@ struct MessageView: View {
                       Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
                   }
                   .contentShape(RoundedRectangle(cornerRadius: 7))
-                }.buttonStyle(.plain).help(L("Save attachment…", "保存附件…") + " " + attachment.name)
+                }.buttonStyle(.plain).disabled(!attachment.available)
+                  .help(
+                    (attachment.canPreview
+                      ? L("Read attached message", "阅读附加邮件") : L("Save attachment…", "保存附件…")) + " "
+                      + attachment.name
+                  )
+                  .contextMenu {
+                    if attachment.canPreview && attachment.available {
+                      Button(L("Read attached message", "阅读附加邮件")) {
+                        model.previewAttachment(attachment)
+                      }
+                    }
+                    if attachment.available && attachment.embedded.isEmpty {
+                      Button(L("Save attachment…", "保存附件…")) { model.saveAttachment(attachment) }
+                    }
+                  }
               }
             }.padding(.horizontal, 16).padding(.vertical, 12)
           }.fixedSize(horizontal: false, vertical: true)
@@ -96,8 +126,8 @@ struct MessageView: View {
         L("Message too large to preview", "邮件过大，暂不预览"), systemImage: "envelope.badge",
         description: Text(
           L(
-            "This message exceeds the 32 MiB preview limit. You can continue reading other messages in the archive.",
-            "这封邮件超过 32 MiB 预览上限，仍可正常阅读存档中的其他邮件。")))
+            "This message exceeds the 32 MiB preview limit. Use Export original to save it without this limit.",
+            "这封邮件超过 32 MiB 预览上限，可通过“导出原始邮件”完整保存，不受此上限限制。")))
     } else {
       ContentUnavailableView(
         L("Select a message", "选择一封邮件"), systemImage: "envelope.open",

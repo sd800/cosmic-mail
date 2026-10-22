@@ -95,7 +95,7 @@ struct ContentView: View {
             model.exportOriginal()
           } label: {
             Image(systemName: "square.and.arrow.up")
-          }.help(L("Export original", "导出原始邮件")).disabled(model.entry == nil)
+          }.help(L("Export original", "导出原始邮件")).disabled(!model.canExportOriginal)
         }
         Button {
           model.chooseFiles()
@@ -175,11 +175,27 @@ struct MessageList: View {
       HStack {
         Text(L("Messages", "邮件")).font(.headline)
         Spacer()
+        Menu {
+          Toggle(L("Newest first", "最新优先"), isOn: $model.newestFirst)
+        } label: {
+          Image(systemName: "arrow.up.arrow.down")
+        }.menuStyle(.borderlessButton).fixedSize()
+          .help(L("Message order", "邮件顺序"))
+        if model.searching { ProgressView().controlSize(.small).help(L("Searching…", "正在搜索…")) }
         Text("\(model.entries.count)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
       }.padding(16)
-      TextField(L("Search subject or sender", "搜索主题或发件人"), text: $model.query).textFieldStyle(
+      TextField(L("Search messages", "搜索邮件"), text: $model.query).textFieldStyle(
         .roundedBorder
       ).padding(.horizontal, 12).padding(.bottom, 12)
+      if model.searchUnreadable > 0 {
+        Text(
+          L(
+            "\(model.searchUnreadable) messages could not be searched.",
+            "\(model.searchUnreadable) 封邮件未能搜索。")
+        )
+        .font(.system(size: 13)).foregroundStyle(.secondary).padding(.horizontal, 12).padding(
+          .bottom, 8)
+      }
       Divider()
       List(selection: Binding(get: { model.selectedEntry }, set: { model.select($0) })) {
         ForEach(model.entries) { entry in

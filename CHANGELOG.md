@@ -2,6 +2,12 @@
 
 [简体中文](CHANGELOG_zh.md)
 
+## 26.1021.7 — 2026-10-21
+
+- Improve message decoding, formatting, and attachment handling.
+- Improve archive browsing, search, and original-message export.
+- Refine link handling and local-file safeguards.
+
 ## 26.1020.6 — 2026-10-20
 
 - Use native macOS menu icons for About, Open, Close all files, and Export original.

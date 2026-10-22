@@ -1,7 +1,7 @@
 import Foundation
 
 public enum MailError: Error, LocalizedError, Equatable {
-  case tooLarge, malformed, unsupported, tooMany, cancelled, sourceChanged
+  case tooLarge, malformed, unsupported, tooMany, cancelled, sourceChanged, unsafeDestination
   public var errorDescription: String? {
     switch self {
     case .tooLarge: return "The file exceeds the safe reading limit."
@@ -10,6 +10,8 @@ public enum MailError: Error, LocalizedError, Equatable {
     case .tooMany: return "This archive contains too many messages to open safely."
     case .cancelled: return "Opening was cancelled."
     case .sourceChanged: return "The source file changed. Reopen it to update the index."
+    case .unsafeDestination:
+      return "Choose another destination to keep open source files unchanged."
     }
   }
 }
@@ -31,6 +33,16 @@ public struct MailAttachment: Identifiable, Sendable {
   public var type: String
   public var bytes: Data
   public var contentID: String
+  public var embedded: [MailMessage] = []
+  public var available = true
+  public var isOLE = false
+  public var canPreview: Bool {
+    guard !isOLE else { return false }
+    return !embedded.isEmpty
+      || ["message/rfc822", "message/global", "application/vnd.ms-outlook"].contains(
+        type.lowercased())
+      || ["eml", "mime", "msg", "oft"].contains((name as NSString).pathExtension.lowercased())
+  }
 }
 public struct MailMessage: Sendable {
   public var subject: String = ""
@@ -57,8 +69,27 @@ public struct MessageEntry: Identifiable, Sendable {
   public var length: Int
   public var file: URL
   public var revision: FileRevision? = nil
+  public var recipients: String = ""
+  public var timestamp: TimeInterval? = nil
+  public init(
+    id: Int, subject: String, from: String, date: String, offset: UInt64, length: Int,
+    file: URL, revision: FileRevision? = nil, recipients: String = "",
+    timestamp: TimeInterval? = nil
+  ) {
+    self.id = id
+    self.subject = subject
+    self.from = from
+    self.date = date
+    self.offset = offset
+    self.length = length
+    self.file = file
+    self.revision = revision
+    self.recipients = recipients
+    self.timestamp = timestamp
+  }
   public var metadataBytes: Int {
     MemoryLayout<Self>.stride + 160 + subject.utf8.count + from.utf8.count + date.utf8.count
+      + recipients.utf8.count
   }
 }
 public struct MailCollection: Identifiable, Sendable {
@@ -95,6 +126,51 @@ public struct IndexLimits: Sendable {
 }
 
 public enum MailSearch {
+  public struct Results: Sendable {
+    public var entries: [MessageEntry]
+    public var unreadable: Int
+  }
+  public static func ordered(_ entries: [MessageEntry], newestFirst: Bool = true) -> [MessageEntry]
+  {
+    entries.sorted {
+      if $0.timestamp == $1.timestamp { return $0.id < $1.id }
+      guard let a = $0.timestamp else { return false }
+      guard let b = $1.timestamp else { return true }
+      return newestFirst ? a > b : a < b
+    }
+  }
+  public static func scan(
+    _ entries: [MessageEntry], query: String, cancelled: () -> Bool = { false }
+  ) throws -> Results {
+    let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return Results(entries: entries, unreadable: 0) }
+    var found: [MessageEntry] = []
+    var unreadable = 0
+    for entry in entries {
+      if cancelled() { throw MailError.cancelled }
+      if !(try matching([entry], query: text)).isEmpty {
+        found.append(entry)
+        continue
+      }
+      do {
+        let matches = try autoreleasepool { () throws -> Bool in
+          let mail = try MailReader.message(entry, cancelled: cancelled)
+          if mail.to.localizedCaseInsensitiveContains(text)
+            || mail.cc.localizedCaseInsensitiveContains(text)
+            || mail.plain.localizedCaseInsensitiveContains(text)
+          {
+            return true
+          }
+          return !mail.html.isEmpty
+            && SafeHTML.searchableText(mail.html).localizedCaseInsensitiveContains(text)
+        }
+        if matches { found.append(entry) }
+      } catch MailError.cancelled { throw MailError.cancelled } catch MailError.sourceChanged {
+        throw MailError.sourceChanged
+      } catch { unreadable += 1 }
+    }
+    return Results(entries: found, unreadable: unreadable)
+  }
   public static func matching(
     _ entries: [MessageEntry], query: String, cancelled: () -> Bool = { false }
   ) throws -> [MessageEntry] {
@@ -105,6 +181,7 @@ public enum MailSearch {
       if position % 128 == 0, cancelled() { throw MailError.cancelled }
       if entry.subject.localizedCaseInsensitiveContains(text)
         || entry.from.localizedCaseInsensitiveContains(text)
+        || entry.recipients.localizedCaseInsensitiveContains(text)
       {
         result.append(entry)
       }
@@ -162,6 +239,17 @@ public func safeFilename(_ name: String) -> String {
     separatedBy: CharacterSet(charactersIn: "/\\:\0").union(.controlCharacters)
   ).joined(separator: "_")
   let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-  return String(
-    (trimmed.isEmpty || trimmed == "." || trimmed == ".." ? "Attachment" : trimmed).prefix(180))
+  let candidate = trimmed.isEmpty || trimmed == "." || trimmed == ".." ? "Attachment" : trimmed
+  let ext = (candidate as NSString).pathExtension
+  let suffix = !ext.isEmpty && ext.utf8.count <= 20 ? "." + ext : ""
+  let base = suffix.isEmpty ? candidate : String(candidate.dropLast(suffix.count))
+  var result = ""
+  var bytes = 0
+  for character in base {
+    let size = String(character).utf8.count
+    if bytes + size > 220 - suffix.utf8.count { break }
+    result.append(character)
+    bytes += size
+  }
+  return (result.isEmpty ? "Attachment" : result) + suffix
 }

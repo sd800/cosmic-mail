@@ -78,18 +78,22 @@ public enum MailReader {
     defer { try? handle.close() }
     let revision = try FileRevision.capture(handle)
     let size = Int(revision.size)
-    guard size > 0, size <= Limits.message else { throw MailError.tooLarge }
+    guard size > 0 else { throw MailError.malformed }
     let fields: [Header]
-    if ["msg", "oft"].contains(ext) {
+    if ["msg", "oft"].contains(ext), size > Limits.message {
+      fields = [Header(name: "Subject", value: url.lastPathComponent)]
+    } else if ["msg", "oft"].contains(ext) {
       let data = try read(handle, count: size, cancelled: cancelled)
       let mail = try Outlook.parse(data)
       fields = [
         Header(name: "Subject", value: mail.subject), Header(name: "From", value: mail.from),
-        Header(name: "Date", value: mail.date),
+        Header(name: "Date", value: mail.date), Header(name: "To", value: mail.to),
+        Header(name: "Cc", value: mail.cc),
       ]
     } else if ext == "emlx" {
-      let data = try read(handle, count: size, cancelled: cancelled)
-      fields = MIME.split(try emlx(data, extension: ext)).headers
+      let range = try emlxRange(handle, offset: 0, length: size)
+      try handle.seek(toOffset: range.0)
+      fields = try headerFields(handle, cancelled: cancelled).fields
     } else {
       fields = try headerFields(handle, cancelled: cancelled).fields
     }
@@ -127,6 +131,92 @@ public enum MailReader {
   }
   public static func original(_ entry: MessageEntry) throws -> Data {
     try emlx(source(entry, cancelled: { false }), extension: entry.file.pathExtension.lowercased())
+  }
+  public static func validateDestination(_ destination: URL, protecting sources: [URL]) throws {
+    guard destination.isFileURL else { throw MailError.malformed }
+    let target = destination.standardizedFileURL.resolvingSymlinksInPath()
+    var output = stat()
+    let exists = stat(target.path, &output) == 0
+    for source in sources where source.isFileURL {
+      let path = source.standardizedFileURL.resolvingSymlinksInPath()
+      var original = stat()
+      guard stat(path.path, &original) == 0 else { continue }
+      let directory = (original.st_mode & S_IFMT) == S_IFDIR
+      if path == target || directory && target.path.hasPrefix(path.path + "/")
+        || exists && original.st_dev == output.st_dev && original.st_ino == output.st_ino
+      {
+        throw MailError.unsafeDestination
+      }
+    }
+  }
+  private static func emlxRange(_ file: FileHandle, offset: UInt64, length: Int) throws -> (
+    UInt64, Int
+  ) {
+    try file.seek(toOffset: offset)
+    let prefix = try file.read(upToCount: min(length, 30)) ?? Data()
+    guard let end = prefix.firstIndex(of: 10),
+      let count = Int(String(decoding: prefix[..<end], as: UTF8.self)),
+      count > 0, count <= length - end - 1
+    else { throw MailError.malformed }
+    return (offset + UInt64(end + 1), count)
+  }
+  /// An explicit export streams to a single temporary output; parsing and its RAM ceiling are independent.
+  public static func exportOriginal(
+    _ entry: MessageEntry, to destination: URL,
+    cancelled: () -> Bool = { false }, chunkSize: Int = 128 * 1024
+  ) throws {
+    guard entry.length >= 0, destination.isFileURL else { throw MailError.malformed }
+    let input = try FileHandle(forReadingFrom: entry.file)
+    defer { try? input.close() }
+    try entry.revision?.verify(input)
+    let sourceRevision = try FileRevision.capture(input)
+    func protectSource() throws {
+      if destination.standardizedFileURL.resolvingSymlinksInPath()
+        == entry.file.standardizedFileURL.resolvingSymlinksInPath()
+      {
+        throw MailError.unsafeDestination
+      }
+      if let target = try? FileHandle(forReadingFrom: destination) {
+        defer { try? target.close() }
+        let revision = try FileRevision.capture(target)
+        guard revision.device != sourceRevision.device || revision.inode != sourceRevision.inode
+        else { throw MailError.unsafeDestination }
+      }
+    }
+    try protectSource()
+    let range =
+      entry.file.pathExtension.lowercased() == "emlx"
+      ? try emlxRange(input, offset: entry.offset, length: entry.length)
+      : (entry.offset, entry.length)
+    guard range.0 <= UInt64(sourceRevision.size),
+      UInt64(range.1) <= UInt64(sourceRevision.size) - range.0
+    else { throw MailError.malformed }
+    let temporary = destination.deletingLastPathComponent().appendingPathComponent(
+      ".CosmicMail-" + UUID().uuidString)
+    let descriptor = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
+    guard descriptor >= 0 else { throw CocoaError(.fileWriteUnknown) }
+    let output = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    defer {
+      try? output.close()
+      try? FileManager.default.removeItem(at: temporary)
+    }
+    try input.seek(toOffset: range.0)
+    var remaining = range.1
+    while remaining > 0 {
+      if cancelled() { throw MailError.cancelled }
+      let chunk =
+        try input.read(upToCount: min(remaining, min(128 * 1024, max(1, chunkSize)))) ?? Data()
+      guard !chunk.isEmpty else { throw MailError.malformed }
+      try output.write(contentsOf: chunk)
+      remaining -= chunk.count
+    }
+    try sourceRevision.verify(input)
+    try protectSource()
+    if cancelled() { throw MailError.cancelled }
+    try output.close()
+    guard Darwin.rename(temporary.path, destination.path) == 0 else {
+      throw CocoaError(.fileWriteUnknown)
+    }
   }
   private static func source(_ entry: MessageEntry, cancelled: () -> Bool) throws -> Data {
     guard entry.length >= 0, entry.length <= Limits.message else { throw MailError.tooLarge }
@@ -167,7 +257,12 @@ public enum MailReader {
       id: id, subject: String(MIME.headerText(MIME.value("Subject", in: fields)).prefix(1024)),
       from: String(MIME.headerText(MIME.value("From", in: fields)).prefix(1024)),
       date: String(MIME.value("Date", in: fields).prefix(256)), offset: offset, length: length,
-      file: url, revision: revision)
+      file: url, revision: revision,
+      recipients: String(
+        MIME.headerText(
+          ["To", "Cc", "Bcc"].map { MIME.value($0, in: fields) }.joined(separator: " ")
+        ).prefix(2048)),
+      timestamp: MailDate.timestamp(MIME.value("Date", in: fields)))
   }
 
   private static let envelope = try! NSRegularExpression(

@@ -3,13 +3,19 @@ import Foundation
 
 public enum MIME {
   public static func decode(_ bytes: Data, charset: String = "utf-8") -> String {
-    let cf = CFStringConvertIANACharSetNameToEncoding(charset as CFString)
-    if cf != kCFStringEncodingInvalidId {
-      let encoding = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(cf))
-      if let text = String(data: bytes, encoding: encoding) { return text }
-    }
-    return String(data: bytes, encoding: .utf8) ?? String(data: bytes, encoding: .windowsCP1252)
-      ?? String(decoding: bytes, as: UTF8.self)
+    MailEncoding.decode(bytes, charset: charset)
+  }
+  public static func decodeHTML(_ bytes: Data, charset: String? = nil) -> String {
+    if bytes.starts(with: [0xff, 0xfe]) { return decode(bytes.dropFirst(2), charset: "utf-16le") }
+    if bytes.starts(with: [0xfe, 0xff]) { return decode(bytes.dropFirst(2), charset: "utf-16be") }
+    if bytes.starts(with: [0xef, 0xbb, 0xbf]) { return decode(bytes.dropFirst(3)) }
+    let prefix = String(decoding: bytes.prefix(8192), as: UTF8.self)
+    let declared = charset?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let meta = try! NSRegularExpression(
+      pattern: #"(?i)<meta\b[^>]{0,1024}\bcharset\s*=\s*["']?\s*([a-zA-Z0-9._-]+)"#)
+    let match = meta.firstMatch(in: prefix, range: NSRange(prefix.startIndex..., in: prefix))
+    let hint = match.map { (prefix as NSString).substring(with: $0.range(at: 1)) }
+    return decode(bytes, charset: declared.flatMap { $0.isEmpty ? nil : $0 } ?? hint ?? "utf-8")
   }
   public static func quotedPrintable(_ data: Data, header: Bool = false) -> Data {
     let bytes = [UInt8](data)
@@ -56,24 +62,37 @@ public enum MIME {
     let matches = encodedWords.matches(in: value, range: NSRange(location: 0, length: ns.length))
     var output = ""
     var cursor = 0
+    var pending = Data()
+    var pendingCharset: String?
+    func flush() {
+      if let charset = pendingCharset { output += decode(pending, charset: charset) }
+      pending.removeAll(keepingCapacity: true)
+      pendingCharset = nil
+    }
     var previousEncoded = false
     for match in matches {
       let gap = ns.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
-      if !previousEncoded || !gap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        output += gap
-      }
+      let adjacent = previousEncoded && gap.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      let charset = ns.substring(with: match.range(at: 1)).lowercased()
+      if !adjacent || pendingCharset != charset { flush() }
+      if !adjacent { output += gap }
       let encoded = ns.substring(with: match.range(at: 3))
       let mode = ns.substring(with: match.range(at: 2)).lowercased()
       let bytes =
         mode == "b"
         ? Data(base64Encoded: encoded, options: .ignoreUnknownCharacters)
         : quotedPrintable(Data(encoded.utf8), header: true)
-      output +=
-        bytes.map { decode($0, charset: ns.substring(with: match.range(at: 1))) }
-        ?? ns.substring(with: match.range)
+      if let bytes {
+        pendingCharset = charset
+        pending.append(bytes)
+      } else {
+        flush()
+        output += ns.substring(with: match.range)
+      }
       cursor = match.range.location + match.range.length
-      previousEncoded = true
+      previousEncoded = bytes != nil
     }
+    flush()
     output += ns.substring(from: cursor)
     return output
   }
@@ -105,34 +124,86 @@ public enum MIME {
   public static func value(_ name: String, in fields: [Header]) -> String {
     fields.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value ?? ""
   }
-  public static func parameter(_ key: String, in value: String) -> String? {
-    let regex = try! NSRegularExpression(
-      pattern: "(?:^|;)\\s*" + NSRegularExpression.escapedPattern(for: key)
-        + "\\s*=\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|([^;\\s]+))", options: .caseInsensitive)
+  private static let parameterPattern = try! NSRegularExpression(
+    pattern: #"(?:^|;)\s*([a-zA-Z0-9_*-]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;\s]+))"#)
+  private static func parameters(in value: String) -> [String: String] {
     let ns = value as NSString
-    guard let m = regex.firstMatch(in: value, range: NSRange(location: 0, length: ns.length)) else {
-      return nil
+    var result: [String: String] = [:]
+    for match in parameterPattern.matches(in: value, range: NSRange(location: 0, length: ns.length))
+      .prefix(256)
+    {
+      let key = ns.substring(with: match.range(at: 1)).lowercased()
+      guard result[key] == nil else { continue }
+      let range = match.range(at: match.range(at: 2).location != NSNotFound ? 2 : 3)
+      result[key] = ns.substring(with: range).replacingOccurrences(
+        of: #"\\(.)"#, with: "$1", options: .regularExpression)
     }
-    return ns.substring(with: m.range(at: m.range(at: 1).location != NSNotFound ? 1 : 2))
-      .replacingOccurrences(of: "\\\"", with: "\"")
+    return result
+  }
+  public static func parameter(_ key: String, in value: String) -> String? {
+    parameters(in: value)[key.lowercased()]
   }
   static func filename(_ fields: [Header]) -> String {
     let disposition = value("Content-Disposition", in: fields)
     let type = value("Content-Type", in: fields)
     for source in [disposition, type] {
-      for key in ["filename*", "name*"] {
-        if let v = parameter(key, in: source) {
-          let bits = v.split(separator: "'", maxSplits: 2, omittingEmptySubsequences: false)
-          if bits.count == 3 {
-            return safeFilename(String(bits[2]).removingPercentEncoding ?? String(bits[2]))
+      let values = parameters(in: source)
+      for key in ["filename", "name"] {
+        var pieces: [String] = []
+        var encoded = false
+        for index in 0..<64 {
+          if let value = values["\(key)*\(index)*"] {
+            pieces.append(value)
+            encoded = true
+          } else if let value = values["\(key)*\(index)"] {
+            // Encode literal segments before joining so '%' in them stays literal.
+            pieces.append(value.utf8.map { String(format: "%%%02X", $0) }.joined())
+          } else {
+            break
           }
+        }
+        if !pieces.isEmpty {
+          let joined = pieces.joined()
+          return safeFilename(encoded ? extendedParameter(joined) : headerText(percentText(joined)))
+        }
+        if let value = values[key + "*"] {
+          return safeFilename(extendedParameter(value))
         }
       }
       for key in ["filename", "name"] {
-        if let v = parameter(key, in: source) { return safeFilename(headerText(v)) }
+        if let v = values[key] { return safeFilename(headerText(v)) }
       }
     }
     return ""
+  }
+  private static func percentBytes(_ text: String) -> Data {
+    let bytes = Array(text.utf8)
+    var result = Data()
+    var i = 0
+    while i < bytes.count {
+      if bytes[i] == 37, i + 2 < bytes.count,
+        let value = UInt8(String(decoding: bytes[(i + 1)...(i + 2)], as: UTF8.self), radix: 16)
+      {
+        result.append(value)
+        i += 3
+      } else {
+        result.append(bytes[i])
+        i += 1
+      }
+    }
+    return result
+  }
+  private static func percentText(_ text: String) -> String { decode(percentBytes(text)) }
+  private static func extendedParameter(_ value: String) -> String {
+    let pieces = value.split(separator: "'", maxSplits: 2, omittingEmptySubsequences: false)
+    return pieces.count == 3
+      ? decode(percentBytes(String(pieces[2])), charset: String(pieces[0])) : percentText(value)
+  }
+  private static func append(_ text: String, to target: inout String, separator: String) {
+    let remaining = max(0, Limits.rendered - target.utf8.count - separator.utf8.count)
+    guard remaining > 0 else { return }
+    if !target.isEmpty { target += separator }
+    target += String(decoding: text.utf8.prefix(remaining), as: UTF8.self)
   }
   public static func parse(_ data: Data, cancelled: () -> Bool = { false }) throws -> MailMessage {
     if cancelled() { throw MailError.cancelled }
@@ -173,6 +244,30 @@ public enum MIME {
     {
       let marker = Data(("--" + boundary).utf8)
       var start: Int?
+      func consume(_ bytes: Data) throws {
+        var child = MailMessage()
+        try part(
+          bytes, depth: depth + 1, count: &count, budget: &budget,
+          message: &child, cancelled: cancelled)
+        message.attachments.append(contentsOf: child.attachments)
+        if type == "multipart/alternative" {
+          if !child.html.isEmpty { message.html = child.html }
+          if !child.plain.isEmpty { message.plain = child.plain }
+        } else {
+          if !child.html.isEmpty {
+            if message.html.isEmpty && !message.plain.isEmpty {
+              message.html =
+                "<div style=\"white-space:pre-wrap\">" + SafeHTML.escape(message.plain) + "</div>"
+            }
+            append(child.html, to: &message.html, separator: "\n")
+          } else if !child.plain.isEmpty && !message.html.isEmpty {
+            append(
+              "<div style=\"white-space:pre-wrap\">" + SafeHTML.escape(child.plain) + "</div>",
+              to: &message.html, separator: "\n")
+          }
+          append(child.plain, to: &message.plain, separator: "\n\n")
+        }
+      }
       var position = raw.startIndex
       while position < raw.endIndex {
         if cancelled() { throw MailError.cancelled }
@@ -185,9 +280,7 @@ public enum MIME {
               var end = position
               if end > begin && raw[end - 1] == 10 { end -= 1 }
               if end > begin && raw[end - 1] == 13 { end -= 1 }
-              try part(
-                Data(raw[begin..<end]), depth: depth + 1, count: &count, budget: &budget,
-                message: &message, cancelled: cancelled)
+              try consume(Data(raw[begin..<end]))
             }
             if suffix.starts(with: [45, 45]) { return }
             start = lineEnd
@@ -196,33 +289,43 @@ public enum MIME {
         position = lineEnd
       }
       if let begin = start, begin < raw.endIndex {
-        try part(
-          Data(raw[begin...]), depth: depth + 1, count: &count, budget: &budget, message: &message,
-          cancelled: cancelled)
+        try consume(Data(raw[begin...]))
       }
       return
     }
     let transfer = value("Content-Transfer-Encoding", in: fields).lowercased()
     let bytes =
       transfer == "base64"
-      ? (Data(base64Encoded: raw, options: .ignoreUnknownCharacters) ?? Data())
+      ? Data(base64Encoded: raw, options: .ignoreUnknownCharacters)
       : transfer == "quoted-printable" ? quotedPrintable(raw) : raw
     let cid = value("Content-ID", in: fields).trimmingCharacters(
       in: CharacterSet(charactersIn: "<> "))
     if !name.isEmpty || disposition.hasPrefix("attachment")
-      || (!type.hasPrefix("text/") && !type.isEmpty)
+      || (!["text/plain", "text/html", ""].contains(type))
     {
-      message.attachments.append(
-        MailAttachment(
-          name: name.isEmpty ? "Attachment" : name, type: type, bytes: bytes, contentID: cid))
+      let defaults = [
+        "message/rfc822": "Attached message.eml", "message/global": "Attached message.eml",
+        "text/calendar": "Calendar.ics", "text/plain": "Attachment.txt",
+        "text/html": "Attachment.html",
+        "application/pdf": "Attachment.pdf", "image/png": "Image.png", "image/jpeg": "Image.jpg",
+        "image/gif": "Image.gif",
+      ]
+      var attachment = MailAttachment(
+        name: name.isEmpty ? defaults[type] ?? "Attachment" : name,
+        type: type, bytes: bytes ?? Data(), contentID: cid)
+      attachment.available = bytes != nil
+      message.attachments.append(attachment)
       return
     }
-    let text = decode(bytes, charset: parameter("charset", in: contentType) ?? "utf-8")
+    guard let bytes else { throw MailError.malformed }
+    let charset = parameter("charset", in: contentType)
+    let text =
+      type == "text/html"
+      ? decodeHTML(bytes, charset: charset) : decode(bytes, charset: charset ?? "utf-8")
     if type == "text/html" {
-      if message.html.isEmpty { message.html = String(text.prefix(Limits.rendered)) }
+      append(text, to: &message.html, separator: "\n")
     } else if type == "text/plain" || type.isEmpty {
-      if !message.plain.isEmpty { message.plain += "\n\n" }
-      message.plain += String(text.prefix(max(0, Limits.rendered - message.plain.utf8.count)))
+      append(text, to: &message.plain, separator: "\n\n")
     }
   }
 }

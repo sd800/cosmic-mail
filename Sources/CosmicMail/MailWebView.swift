@@ -10,7 +10,7 @@ struct MailWebView: NSViewRepresentable {
   let dark: Bool
   let scale: Double
   let interactive: Bool
-  let open: (String, UUID) -> Void
+  let open: (String, UUID, NSView, NSRect) -> Void
 
   /// App-owned code in an isolated world. Mail is passed as data, never interpolated as code.
   static let updateScript = """
@@ -18,12 +18,17 @@ struct MailWebView: NSViewRepresentable {
       const fragment = document.createElement('template');
       fragment.innerHTML = body;
       window.getSelection()?.removeAllRanges();
-      document.body.replaceChildren(fragment.content);
+      const wrapper = document.createElement('div');
+      wrapper.className = 'mail-content';
+      wrapper.append(fragment.content);
+      document.body.replaceChildren(wrapper);
+      document.getElementById('mail-styles').textContent = stylesheet;
       window.scrollTo(0, 0);
     }
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
     document.documentElement.style.setProperty('--paper', paper);
     document.body.style.fontSize = fontSize + 'px';
+    document.documentElement.style.setProperty('--mail-scale', fontSize / 16);
     return true;
     """
 
@@ -113,7 +118,7 @@ struct MailWebView: NSViewRepresentable {
     var desired: Content?, applied: Content?
     var terminatedAt: UUID?
     private var failedAt: UUID?
-    var links: [String: String] = [:], open: ((String, UUID) -> Void)?
+    var links: [String: String] = [:], open: ((String, UUID, NSView, NSRect) -> Void)?
 
     func loadShell() {
       guard !retired, let web, ready || failed, shellNavigation == nil else { return }
@@ -137,7 +142,8 @@ struct MailWebView: NSViewRepresentable {
       web.callAsyncJavaScript(
         MailWebView.updateScript,
         arguments: [
-          "body": replace ? body : "", "replace": replace, "dark": request.dark,
+          "body": replace ? body : "", "stylesheet": ready ? request.rendered.stylesheet : "",
+          "replace": replace, "dark": request.dark,
           "paper": String(format: "#%06X", request.paperRGB), "fontSize": 16 * request.scale,
         ], in: nil, in: .defaultClient
       ) { [weak self] result in
@@ -180,7 +186,29 @@ struct MailWebView: NSViewRepresentable {
         interactive, !applying, desired?.identity == applied?.identity, let target = links[id]
       {
         decisionHandler(.cancel)
-        if let identity = applied?.identity { open?(target, identity) }
+        guard let identity = applied?.identity else { return }
+        // Query only the already-sanitized anchor; source mail cannot supply executable code.
+        webView.callAsyncJavaScript(
+          "const a=[...document.links].find(a=>a.getAttribute('href')===href); if(!a)return null; const r=a.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height};",
+          arguments: ["href": url.absoluteString], in: nil, in: .defaultClient
+        ) { [weak self, weak webView] result in
+          guard let self, let webView, !self.retired, self.interactive, !self.applying,
+            self.applied?.identity == identity, self.desired?.identity == identity
+          else { return }
+          var rectangle = NSRect(
+            x: webView.bounds.midX, y: webView.bounds.midY, width: 1, height: 1)
+          if case .success(let value) = result, let box = value as? [String: Double],
+            let x = box["x"], let y = box["y"], let width = box["width"],
+            let height = box["height"],
+            [x, y, width, height].allSatisfy({ $0.isFinite }), width > 0, height > 0
+          {
+            rectangle = NSRect(
+              x: x, y: webView.isFlipped ? y : webView.bounds.height - y - height, width: width,
+              height: height)
+            if !rectangle.intersects(webView.bounds) { return }
+          }
+          self.open?(target, identity, webView, rectangle)
+        }
         return
       }
       if action.navigationType == .other && url.absoluteString == "about:blank" {
