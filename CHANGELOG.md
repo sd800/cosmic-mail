@@ -6,6 +6,7 @@
 
 - Use native macOS menu icons for About, Open, Close all files, and Export original.
 - Move Close all files below Close while preserving its keyboard shortcut.
+- Refine security documentation and public guidance.
 
 ## 26.1020.5 — 2026-10-20
 

@@ -1,23 +1,35 @@
 # Security design
 
-Cosmic Mail treats every mail file, attachment, sender name, header, and link as untrusted data.
+Cosmic Mail protects local email reading through macOS App Sandbox, controlled file access, passive message rendering, and confirmed external actions. Mail files, headers, attachments, and links pass through validation before display or use.
 
-## Isolation
+## Controlled access
 
-The shipped app is signed with App Sandbox and user-selected file access. It has no broad home-folder, camera, microphone, contacts, or mail-account entitlement. The client-network entitlement is required by macOS to launch WebKit's subprocesses, including for local HTML. It is not used to fetch mail or remote content.
+The app is signed with App Sandbox and accesses documents through user-selected file permissions. Access stays scoped to the selected files and their active readers. It has no broad home-folder, camera, microphone, contacts, or mail-account entitlement. The client-network entitlement supports WebKit subprocesses, including local HTML rendering; message display blocks remote resources.
 
-Before display, mail HTML is reconstructed with a small static tag/style allowlist. There are no source `style` blocks, scripts, event handlers, forms, SVG, embedded objects, arbitrary URI schemes, CSS URLs, font downloads, frames, or source resource attributes. Remote images are omitted. Only bounded, validated, single-frame CID PNG/JPEG/GIF attachments can become inline images.
+Messages, archive indexes, attachments, and captured email links are held in memory. The app reads source files directly and leaves them unchanged. Reading preferences are stored separately from message content. WebKit uses a nonpersistent data store.
 
-The generated document applies a restrictive CSP, including `default-src 'none'`, `script-src 'none'`, `connect-src 'none'`, and `img-src data:`. WebKit content JavaScript and script-created windows are disabled. An independently compiled resource barrier blocks HTTP/HTTPS/WebSocket/FTP/file requests and is installed before mail loads. Failure to compile the barrier falls back to escaped plain text. The WebKit data store is ephemeral. App-owned renderer code runs in an isolated client world. Body replacements receive sanitized markup through structured arguments, never mail interpolated into executable JavaScript. Content JavaScript remains disabled and the original shell CSP remains in force. Plain-text-only fallback remains active if resource-rule compilation fails. Applied presentation identities gate links so an old page cannot trigger actions for a newly selected message.
+## Protected message display
 
-All source anchors become random opaque IDs. Navigation is cancelled before the native action runs. HTTP/HTTPS destinations are displayed for explicit confirmation; mailto stays inside capture; tel/sms can only be copied. Credentials embedded in URLs and control characters are rejected. There is no browser automation, command execution, scripting bridge, or arbitrary application-protocol launching.
+Before display, mail HTML is reconstructed with a fixed tag/style allowlist. This retains readable text, tables, and emphasis while removing scripts, event handlers, forms, source style blocks, SVG, frames, embedded objects, and remote resource attributes. Inline images are limited to validated, single-frame CID PNG/JPEG/GIF attachments within byte and dimension budgets.
 
-## File handling
+The generated document uses a restrictive Content Security Policy, including `default-src 'none'`, `script-src 'none'`, `connect-src 'none'`, and `img-src data:`. WebKit content JavaScript and script-created windows are disabled. An independent resource barrier blocks HTTP/HTTPS/WebSocket/FTP/file requests before a message loads. If resource-rule setup is unavailable, the reader displays escaped plain text with remote content still blocked.
 
-Attachments remain data until a user explicitly saves via NSSavePanel. They are never executed, automatically opened, unarchived, or written into a guessed path. Source filenames are normalized. An exported attachment may itself be unsafe in another application: saving does not certify its contents. Source messages are never modified.
+App-owned renderer code runs in an isolated client world. Updates receive sanitized content through structured arguments rather than interpolated scripts, while the shell's content policy stays active. Presentation identities bind links and actions to the message actually on screen, keeping a delayed event from another message separate from the current selection.
 
-MIME nesting/work/part limits, CFB bounds and cycle checks, message-size limits, bounded index metadata/entry counts, and image dimension limits constrain malformed input. Indexing is cancellable; stale selections cannot replace the current message. Limits reduce resource-exhaustion risk; they are not a proof that every malicious input is harmless.
+## Deliberate links and attachments
+
+Source links become random opaque IDs and are handled through native controls. Website destinations are shown for confirmation; mailto links stay in Cosmic Mail's capture view, and tel/sms links provide copying only. URL validation rejects embedded credentials, control characters, local-file targets, and unsupported protocols. Message content has no command-execution or arbitrary application-launch interface.
+
+Attachments stay inert in the reader. Saving requires an explicit action and a destination chosen through NSSavePanel. Filenames are normalized, and the export contains the original attachment bytes. Cosmic Mail does not automatically execute, open, or unpack attachments, and it preserves the source message.
+
+## Bounded file processing
+
+Native Swift readers validate MIME structure, MSG/CFB storage chains, and mailbox records. Nesting, parse work, part counts, message sizes, index metadata, image dimensions, and attachment sizes have explicit limits. Compound-file readers check offsets and detect cyclic chains. [TECHNICAL.md](TECHNICAL.md) maintains the current budgets and supported format details.
+
+Archive indexing is incremental and cancellable. Source-file identity checks detect changes during reading; presentation ownership keeps superseded selections from replacing current content. Parsing and search run away from the main UI so normal navigation stays responsive.
 
 ## Verification and reporting
 
-Run `scripts/test.sh` before releases. Check the sandbox signature, a synthetic HTML message with attempted active/remote resources, external-link confirmation, mailto capture, attachments, and archive navigation in the actual release bundle. Never include real mail in fixtures, screenshots, diagnostics, or the repository. Report vulnerabilities privately to the maintainer through the contact information at [Songming.org](https://songming.org), without attaching private mail to a public issue.
+Security checks cover passive HTML reconstruction, remote-resource blocking, malformed file structures, image validation, confirmed links, and attachment handling. Use small synthetic fixtures and the focused procedures in [QA.md](QA.md), and verify the sandbox signature for an app release. Retain reusable test code and concise findings, with private mail and full logs excluded from test artifacts and the repository.
+
+Report suspected vulnerabilities through [GitHub private vulnerability reporting](https://github.com/sd800/cosmic-mail/security/advisories/new). Include the affected version and a minimal synthetic reproduction; keep private mail and credentials out of public issues.
