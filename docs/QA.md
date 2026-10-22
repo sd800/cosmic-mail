@@ -1,51 +1,36 @@
-# Release verification
+# Verification guide
 
-## 26.1020.6 — 2026-10-20
+Use small synthetic inputs and run the checks relevant to the changed behavior. Parser and UI tests live in `Tests/`; `scripts/test.sh` is the full test entry point. No stress test or large archive is needed for routine maintenance.
 
-- Universal arm64/x86_64 release builds and strict sandbox signature verification passed.
-- The installed-app File menu places Close all files after the native Close command. Open shows the native file picker; About opens the standard macOS panel with one copyright line.
-- Menu labels use system SF Symbols without custom image assets or menu styling.
-- Only the menu smoke checks and release packaging checks were run; no parser suite or stress tests were run.
+## Message parsing and archive handling
 
-## 26.1020.5 — 2026-10-20
+- Check mailto decoding, folded headers, MIME alternatives, common encodings, CID images, EMLX export, and MSG/CFB bounds and cyclic chains.
+- Exercise MBOX indexing with a small multi-message file, separators inside bodies, Content-Length, and a line crossing the scanner chunk boundary. Simulate index limits with small configured budgets and oversized-message behavior with metadata rather than large generated files.
+- Check incremental results, cancellation, changed source files, RAM index reuse, background search, and Maildir symlink filtering. A partial or failed read must leave a clear state and a usable retry path.
+- Open multiple files, switch between them, close individual files, and close all. Each open file keeps its selected message while present in the sidebar.
 
-- Generated icon matches the approved draft byte for byte; line coordinates are unchanged.
-- Universal release build and strict sandbox signature verification passed.
-- Both README headings use the same generated 256 px PNG at a 96 px display width.
-- No functional or stress tests were run for this icon and documentation update.
+## Protected display
 
-## 26.1020.4 — 2026-10-20
+- Include attempted scripts, event handlers, remote images, frames, styles, and executable links in a synthetic HTML message. Check passive text/tables/emphasis remain readable and remote resources stay blocked.
+- Verify the WebKit resource barrier compiles and the generated content policy stays installed after message replacement, appearance changes, and text-size changes.
+- Confirm HTML replacements use the existing local shell. Light/dark and font-size changes preserve selection; a new message clears the previous message's selection.
+- Exercise rapid selection, delayed completion, close/disposal, failed reads, and explicit retry. Stale content and actions must remain associated with their original presentation.
+- Save a tiny synthetic attachment through NSSavePanel and compare it with the source bytes. Saving must not open the attachment or another application.
 
-- Six focused small-input checks passed: sidebar append/reuse/per-file selection/close, actual-window-only session cleanup, stable presentations/latest selection and close, explicit renderer retry after dismissing an alert, failed-source clearing, actual WebKit shell reuse/isolated body replacement with content JavaScript disabled, and existing HTML active/remote-content isolation.
-- The WebKit check verifies a document marker survives message replacement, light/dark and font-size changes preserve selected text, a new message clears prior selection, quoted text remains literal, and CSP remains installed.
-- Each fixture contains only two tiny synthetic messages. No large inputs, benchmarks, or stress tests were run.
-- Installed-app smoke check verified HTML/attachment-to-plain switching with the toolbar button identities preserved. Final default list width is 305 pt; window sizes remain unchanged.
+## Native interface
 
-## 26.1020.3 — 2026-10-20
+- Check English/Simplified Chinese, automatic/light/dark appearance, system typography, headers, attachments, numeric UTC offsets, and a continuous reading background.
+- Switch between HTML, plain text, attachments, loading, and empty/error states. The message list starts at 305 pt and the reading divider remains stable; switching content does not resize the window or flash the toolbar.
+- Verify website-link confirmation, copy-only tel/sms handling, and mailto capture. A synthetic mailto received after closing the main window opens its details without restoring old mail.
+- Check the native Open file picker, About panel, single copyright line, and Settings shortcut. File-menu Close all files follows Close, and corresponding commands use system symbols.
+- Installation leaves the default-email-handler choice unchanged. Verify a handler change only through an explicit user action.
 
-- 11 focused, small-input tests passed: incremental MBOX batches, low simulated index budgets, Content-Length/prose separators, cancellation, changed sources/RAM index validity, search, Maildir symlink filtering, MIME alternatives, and date formatting.
-- No stress tests or large-archive benchmarks were run. The largest generated test input was about 129 KiB to cross one scanner-chunk boundary. Oversized-message handling was verified using metadata only, without creating a large file.
-- Optimized arm64/x86_64 builds and strict sandbox signature verification passed.
-- Installed-app smoke check used the existing two-message synthetic Reading.mbox: HTML/attachment and plain-text switching, expanded headers, search/clear, and unchanged reading-divider position. No real mail was used.
-- Default message-list width is 310 pt. App window dimensions are unchanged.
+## Icons and packaging
 
-## 26.1020.2 — 2026-10-20
+- Generate icons from `scripts/icon.swift` and verify the `.icns` and README PNG use the same artwork. Both README headings display the generated PNG at 96 px.
+- Build the universal release using `scripts/build.sh`. Verify arm64/x86_64 slices and strict App Sandbox code signing; validate the ZIP and checksum against the committed source.
+- Run the relevant smoke checks against the release bundle. Track architecture-specific runtime coverage separately from universal compilation.
 
-- Three focused date regressions passed: numeric offsets with ambiguous comments, fractional/zero offsets and English/Chinese formatting, and malformed input without guessed offsets.
-- Updated capture layout removes the heading subtitle and retains a separate unsent-status line above the footer note.
-- The affected HTML isolation regression also passed with native light/dark background values.
-- Installed release smoke check confirmed the dark reading area is continuous with the message header and the About panel contains one copyright line.
-- Installed-app smoke check confirmed the exact +0800 (CST) sample displays its original midnight time with UTC+8.
+## Fixtures
 
-## 26.1020.1 — 2026-10-20
-
-- 12 focused XCTest cases passed on Apple Silicon: mailto decoding, MIME alternatives/encodings/CID, HTML isolation, EMLX export, MBOX indexing/cancellation, Maildir symlink filtering, Outlook Unicode/FAT cycles, malformed inputs, entity decoding, image bounds, and actual WebKit resource-rule compilation.
-- Optimized arm64 and x86_64 builds succeeded. The universal bundle contains both architectures and passes strict codesign verification with App Sandbox enabled. Intel runtime behavior has not been tested on physical Intel hardware.
-- Installed release app verified on macOS 26.6.2: native main window, ⌘, Settings, archive selection, HTML/plain rendering, English/Simplified Chinese switching, immediate light/dark appearance, external-link confirmation, and mailto capture.
-- Closing the main window clears open content. A subsequent synthetic mailto reopens the app and displays the new link without restoring old mail.
-- Synthetic attachment saved via NSSavePanel; output exactly matches the source attachment bytes. No application was opened for the attachment.
-- Active script and remote image content in the fixture was removed; safe table/emphasis/link content remained readable.
-- Default-handler change was deliberately not executed: installation leaves that user choice intact.
-- Synthetic fixtures are generated by scripts/make-fixtures.py in ignored test-dist, which includes its own README.
-
-Reuse the synthetic cases above when changing message parsing, resource blocking, or archive navigation; add focused cases for the boundary being changed.
+`scripts/make-fixtures.py` creates small synthetic messages and archives in ignored `test-dist/`. Keep its local README current so fixtures can be reused for later maintenance. Retain test code, tiny fixtures, and concise findings, not full logs or recordings. Real mail and personal browser data stay outside test artifacts and the repository.

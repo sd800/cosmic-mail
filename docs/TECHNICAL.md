@@ -7,7 +7,8 @@
 - `Resources/`: app icon and sandbox entitlements.
 - `scripts/`: icon generation, bundle metadata, universal packaging, synthetic fixtures, and test entry point.
 - `Tests/`: focused parser, isolation, and WebKit barrier regression checks.
-- `dist/`, `test-dist/`, and `sidenote/`: ignored build output, reusable local test material, and internal handoff notes. Never commit real email.
+- `dist/`: generated application and release packages.
+- `test-dist/`: reusable synthetic test material, excluded from publication. Keep real email out of the repository.
 
 ## Native lifecycle
 
@@ -49,8 +50,8 @@ HTML is reconstructed from an allowlist. Mail-supplied fonts/colors/backgrounds 
 
 ## Build and release
 
-`VERSION` is the version source of truth. Format: `YY.MDD.NUM`; `NUM` is the release sequence for that month. Example: `26.1020.1`. Commit subjects are exactly `Release <version>`, without a body. Public changes go in bilingual changelogs. Internal implementation notes go in ignored `sidenote/`, not a second changelog.
+`VERSION` is the version source of truth. Format: `YY.MDD.NUM`; `NUM` is the release sequence for that month. Example: `26.1020.1`. Commit subjects are exactly `Release <version>`, without a body. Public changes go in bilingual changelogs.
 
-`./scripts/build.sh` creates separate optimized arm64/x86_64 builds for macOS 14+, combines them using lipo, creates a native bundle, applies ad-hoc sandbox signing, verifies the signature, and writes a ZIP/checksum to `dist/`. There are no runtime third-party packages. `MAIL_SDK_OVERRIDE` selects another installed SDK. A macOS 26.5 SDK is preferred on this development machine to avoid prerelease macOS 27 SwiftUI macro tooling mismatches.
+`./scripts/build.sh` creates separate optimized arm64/x86_64 builds for macOS 14+, combines them using lipo, creates a native bundle, applies ad-hoc sandbox signing, verifies the signature, and writes a ZIP/checksum to `dist/`. There are no runtime third-party packages. `MAIL_SDK_OVERRIDE` selects another installed SDK. When installed, macOS 26.5 is the default SDK selected by these scripts.
 
 Release assets must come from the exact committed source. Upload the universal ZIP and SHA256SUMS.txt to the corresponding GitHub Release. Apple signing/notarization is not available; document the normal macOS Open Anyway workflow, never global Gatekeeper disabling.
