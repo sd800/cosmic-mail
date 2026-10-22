@@ -1,6 +1,6 @@
 # Changelog
 
-[简体中文](CHANGELOG_zh.md)
+[Simplified Chinese](CHANGELOG_zh.md)
 
 ## 26.1021.7 — 2026-10-21
 
