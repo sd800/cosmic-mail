@@ -38,6 +38,10 @@ Recipients, Cc/Bcc, subject, and message text appear in a normal window with cop
 
 Your mail stays on your Mac. Messages are read from the files you open, without an imported library or cloud upload. Remote images and other remote content are blocked. Email scripts and embedded objects do not run, attachments never open automatically, and links inside messages offer copying without opening another app. Only reading preferences are saved between launches.
 
+## Website
+
+Visit [cmail.songming.org](https://cmail.songming.org/) for the product website. Its static source lives in [web/](web/README.md), opens locally by double-clicking `web/index.html`, and deploys through GitHub Actions.
+
 ## Development
 
 Build with **Xcode 16 or later**, an installed macOS SDK, Swift, and Python 3. No external packages are required.

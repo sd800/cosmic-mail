@@ -17,10 +17,10 @@ func draw(_ pixels: Int) throws {
   (transform as NSAffineTransform).concat()
   let tile = NSBezierPath(
     roundedRect: NSRect(x: 56, y: 56, width: 912, height: 912), xRadius: 208, yRadius: 208)
-  NSGradient(starting: color(82, 156, 202), ending: color(43, 94, 142))!.draw(in: tile, angle: -80)
+  NSGradient(starting: color(96, 194, 242), ending: color(21, 126, 189))!.draw(in: tile, angle: -80)
   let sheet = NSBezierPath(
     roundedRect: NSRect(x: 294, y: 333, width: 436, height: 427), xRadius: 30, yRadius: 30)
-  color(235, 243, 248).setFill()
+  color(237, 248, 255).setFill()
   sheet.fill()
   let line = NSBezierPath()
   line.move(to: NSPoint(x: 366, y: 676))
@@ -29,12 +29,12 @@ func draw(_ pixels: Int) throws {
   line.line(to: NSPoint(x: 610, y: 614))
   line.lineWidth = 18
   line.lineCapStyle = .round
-  color(125, 164, 189).setStroke()
+  color(100, 166, 205).setStroke()
   let envelope = NSBezierPath(
     roundedRect: NSRect(x: 222, y: 268, width: 580, height: 353), xRadius: 42, yRadius: 42)
-  color(246, 249, 250).setFill()
+  color(248, 252, 255).setFill()
   envelope.fill()
-  color(125, 164, 189).setStroke()
+  color(100, 166, 205).setStroke()
   line.stroke()
   let fold = NSBezierPath()
   fold.move(to: NSPoint(x: 230, y: 587))
@@ -46,7 +46,7 @@ func draw(_ pixels: Int) throws {
   fold.lineWidth = 21
   fold.lineCapStyle = .round
   fold.lineJoinStyle = .round
-  color(65, 121, 162).setStroke()
+  color(36, 133, 188).setStroke()
   fold.stroke()
   NSGraphicsContext.restoreGraphicsState()
   let size = pixels == 1024 ? "icon_512x512@2x.png" : "icon_\(pixels)x\(pixels).png"

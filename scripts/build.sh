@@ -14,6 +14,7 @@ xcrun swiftc -sdk "$MAIL_SDK" scripts/icon.swift -o .build/icon/draw
 .build/icon/draw .build/icon/CosmicMail.iconset
 mkdir -p docs/assets
 cp .build/icon/CosmicMail.iconset/icon_256x256.png docs/assets/cosmic-mail.png
+if [ -d web/assets ]; then cp docs/assets/cosmic-mail.png web/assets/icon.png; fi
 iconutil -c icns .build/icon/CosmicMail.iconset -o Resources/AppIcon.icns
 for arch in arm64 x86_64; do
   swift build -c release --build-system native --scratch-path ".build/$arch" --sdk "$MAIL_SDK" --triple "$arch-apple-macosx14.0"

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Open saved emails and archives. Catch email links before they become compose windows. Cosmic Mail is a thoughtful, private email reader for macOS.">
+  <meta name="theme-color" content="#f4faff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111e28" media="(prefers-color-scheme: dark)">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Cosmic Mail — Mail, on your terms.">
+  <meta property="og:description" content="A quiet reader for saved email. A thoughtful pause for email links. Made for Mac.">
+  <meta property="og:url" content="https://cmail.songming.org/">
+  <meta property="og:image" content="https://cmail.songming.org/assets/icon.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="canonical" href="https://cmail.songming.org/">
+  <link rel="icon" href="assets/icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="site.js" defer></script>
+  <title>Cosmic Mail — Mail, on your terms.</title>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="#top" aria-label="Cosmic Mail home"><img src="assets/icon.png" width="38" height="38" alt=""><span>Cosmic Mail</span></a>
+    <nav aria-label="Main navigation"><a href="#reading">Reading</a><a href="#email-links">Email links</a><a href="#privacy">Privacy</a></nav>
+    <a class="nav-download" href="#download">Get the app <span aria-hidden="true">↗</span></a>
+  </div>
+</header>
+<main id="main">
+  <section class="hero wrap" id="top" aria-labelledby="hero-heading">
+    <div class="hero-copy">
+      <p class="eyebrow">A NATIVE EMAIL READER FOR MAC</p>
+      <h1 id="hero-heading">Mail, on<br>your terms.</h1>
+      <p class="hero-description">A quiet reader for saved email.<br>A thoughtful pause for email links.</p>
+      <div class="hero-actions"><a class="button primary" href="#download"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 17v4h14v-4"/></svg>Download for Mac</a><a class="text-link" href="#reading">Take a closer look <span aria-hidden="true">↓</span></a></div>
+      <p class="compatibility">macOS 14 or later · Apple silicon and Intel</p>
+    </div>
+    <div class="product-stage" aria-label="Interactive illustration of Cosmic Mail">
+      <div class="preview-switch" role="tablist" aria-label="Product preview">
+        <button id="tab-reading" type="button" role="tab" aria-controls="preview-reading" aria-selected="true" tabindex="0">Read saved mail</button>
+        <button id="tab-link" type="button" role="tab" aria-controls="preview-link" aria-selected="false" tabindex="-1">Catch a link</button>
+      </div>
+      <div class="mac-window">
+        <div class="window-bar"><div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div><span>Cosmic Mail</span><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 5v14"/></svg></div>
+        <div class="preview-panel" id="preview-reading" role="tabpanel" aria-labelledby="tab-reading" tabindex="0">
+          <aside class="mock-sidebar" aria-label="Illustrative mailbox">
+            <span class="sidebar-label">Open files</span>
+            <div class="file-selected"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v14H4zM3 3h18v4H3zM9 11h6"/></svg><span>Reading.mbox</span></div>
+            <span class="sidebar-footer">On your Mac</span>
+          </aside>
+          <article class="mock-message" aria-label="Example email">
+            <div class="message-type"><span class="read-dot"></span>Saved email</div>
+            <h2>The things worth keeping</h2>
+            <div class="sender"><span class="avatar" aria-hidden="true">A</span><div><strong>Alex Morgan</strong><span>alex@example.org</span></div></div>
+            <div class="message-copy"><p>Hi Sam,</p><p>Here are the notes from our conversation. A few good ideas, saved for another day.</p><p>See you soon,<br>Alex</p></div>
+            <div class="mock-attachment"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H5v20h14V7zM14 2v5h5M8 12h8M8 16h6"/></svg><span>Project notes.pdf</span><span class="attachment-arrow" aria-hidden="true">↓</span></div>
+          </article>
+        </div>
+        <div class="preview-panel capture-panel" id="preview-link" role="tabpanel" aria-labelledby="tab-link" tabindex="0" hidden>
+          <div class="capture-heading"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4m-6 8-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2-1 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" transform="translate(1 0)"/></svg><h2>Email link</h2></div>
+          <dl class="capture-fields"><div><dt>To</dt><dd>hello@example.org</dd></div><div><dt>Subject</dt><dd>A quick question</dd></div></dl>
+          <p class="capture-body">Hello! I’d love to know a little more.</p>
+          <div class="capture-actions"><button type="button" class="small-button" data-copy="details">Copy details</button><button type="button" class="plain-button" data-copy="link">Copy original link</button></div>
+          <p class="capture-note">Read it. Copy what you need. Carry on.</p>
+          <span id="copy-status" class="copy-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="preview-caption"><span class="preview-label">Interactive preview</span><span>Made to feel at home.</span></div>
+    </div>
+  </section>
+  <div class="principles wrap" aria-label="At a glance"><span>No account setup.</span><span>No library import.</span><span>Your originals stay unchanged.</span></div>
+
+  <section class="reading-section wrap section" id="reading" aria-labelledby="reading-heading">
+    <div class="section-heading"><p class="eyebrow">FOR THE MAIL YOU KEEP</p><h2 id="reading-heading">An old conversation.<br>A fresh perspective.</h2></div>
+    <div class="reading-content"><p class="section-description">A Gmail backup. A message from years ago. A folder of things worth saving. Open your email files and archives directly, in a familiar Mac window.</p><p class="secondary-copy">Search messages, revisit attachments, and keep multiple archives within reach in the sidebar. Just open a file and start reading.</p><div class="format-line" aria-label="Example supported formats"><span>.eml</span><span>.msg</span><span>MBOX</span><span>Maildir</span></div><a class="text-link" href="#file-formats">See supported formats <span aria-hidden="true">↗</span></a></div>
+  </section>
+
+  <section class="link-section wrap section" id="email-links" aria-labelledby="links-heading">
+    <div class="link-illustration" aria-label="An email link becomes readable details"><div class="link-token"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></svg><span>mailto:hello@example.org</span></div><div class="flow-line" aria-hidden="true"><span></span><svg viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></svg></div><div class="deliberate-choice"><img src="assets/icon.png" width="56" height="56" alt=""><div><strong>A moment to choose.</strong><span>View. Copy. Close.</span></div></div></div>
+    <div class="link-copy"><p class="eyebrow">FOR THE LINKS YOU CLICK</p><h2 id="links-heading">A click isn’t<br>a commitment.</h2><p class="section-description">Clicking an email address shouldn’t pull you into writing a message. Set Cosmic Mail as your email-link app to see the recipients, subject, and message in a calm, copyable view.</p><p class="secondary-copy">Take what you need, or simply close the window. Nothing is sent, and no Hide My Email alias is created.</p><button type="button" class="text-link demo-link" data-show-capture>Try the link preview <span aria-hidden="true">↑</span></button></div>
+  </section>
+
+  <section class="privacy-section" id="privacy" aria-labelledby="privacy-heading"><div class="wrap privacy-inner"><div class="privacy-heading"><svg class="privacy-symbol" viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="20" width="30" height="23" rx="5"/><path d="M15 20v-7a9 9 0 0 1 18 0v7M24 29v5"/></svg><p class="eyebrow">PRIVATE BY DESIGN</p><h2 id="privacy-heading">Your mail belongs<br>on your Mac.</h2><p>Read the files you choose. Keep your mail, your attachments, and your archive on your device.</p></div><div class="privacy-points"><div><h3>Local from the first click.</h3><p>Your mail opens directly, without cloud uploads or an imported mail library.</p></div><div><h3>Outside content stays outside.</h3><p>Remote images and tracking content are blocked. Email scripts and embedded objects don’t run.</p></div><div><h3>Every next step is yours.</h3><p>Attachments wait for you to save them. Links inside messages offer copying, without opening another app.</p></div></div></div></section>
+
+  <section class="questions-section wrap section" id="questions" aria-labelledby="questions-heading"><div class="section-heading"><p class="eyebrow">A FEW THINGS TO KNOW</p><h2 id="questions-heading">Simply answered.</h2></div><div class="questions">
+    <details id="file-formats"><summary>Which files can I open?<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="answer"><p>Open <span class="format-list">.eml/.mime/.emlx/.msg/.oft/.mbox/.mbx/.mbo</span> files, Apple Mail mailbox folders, and Maildir folders. MBX files use the MBOX format.</p><p>For Outlook PST/OST/OLM archives, export to EML or MBOX first.</p></div></details>
+    <details><summary>Does it replace my email app?<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="answer"><p>Cosmic Mail is a reader for local email and a deliberate way to handle email links. Keep using your existing email service for your inbox, syncing, and sending.</p></div></details>
+    <details><summary>How do I catch email links?<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="answer"><p>Open Cosmic Mail → Settings <kbd>⌘,</kbd> and choose <strong>Use Cosmic Mail for email links</strong>. It’s your choice: installing the app doesn’t change your default apps.</p></div></details>
+    <details><summary>How do I install Cosmic Mail?<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div class="answer"><p><a href="#download">Download the latest app</a>, unzip it, and move Cosmic Mail.app to Applications. The universal app supports Apple silicon and Intel Macs running macOS 14 or later.</p><p>The app is ad hoc signed. If macOS asks you to approve the first launch, check that the download is from sd800/cosmic-mail, then open System Settings → Privacy &amp; Security → Open Anyway.</p></div></details>
+  </div></section>
+
+  <section class="closing wrap" id="download" aria-labelledby="closing-heading"><img src="assets/icon.png" width="76" height="76" alt=""><h2 id="closing-heading">Less friction.<br>More intention.</h2><p>A little utility. A calmer Mac.</p><a class="button primary" href="https://github.com/sd800/cosmic-mail/releases/latest">Download for Mac <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a></section>
+</main>
+<footer class="wrap site-footer"><span>© 2026 Songming.org</span><div><a href="https://github.com/sd800/cosmic-mail">GitHub</a><a href="#privacy">Privacy</a><a href="#top">Back to top ↑</a></div><span>Made for macOS.</span></footer>
+</body>
+</html>

@@ -38,6 +38,10 @@ Cosmic Mail 的设计源于一个简单的想法：**打开一条链接或一个
 
 邮件留在你的 Mac 上。直接读取你打开的文件，不建立导入资料库，不上传云端。阻止远程图片和其他远程内容，不运行邮件脚本或嵌入对象，不自动打开附件；邮件内的链接仅提供复制，不直接打开网页或其他应用。应用仅保存阅读偏好，不跨启动保存邮件内容。
 
+## 网站
+
+产品网站：[cmail.songming.org](https://cmail.songming.org/)。静态网站源码位于 [web/](web/README.md)，双击 `web/index.html` 即可本地打开，通过 GitHub Actions 发布。
+
 ## 开发
 
 需要 **Xcode 16 或更新版本**、macOS SDK、Swift 和 Python 3，无第三方软件包依赖。

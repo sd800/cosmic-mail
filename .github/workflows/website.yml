@@ -1,0 +1,89 @@
+name: Deploy Cosmic Mail website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'test/website_test.py'
+      - '.github/workflows/website.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cosmic-mail-pages
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      pages-ready: ${{ steps.pages.outputs.ready }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate website
+        run: |
+          python3 -B -m unittest discover -s test -p 'website_test.py'
+          node --check web/site.js
+      - name: Check Pages configuration
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          url = 'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/pages'
+          request = urllib.request.Request(url, headers={
+              'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+          })
+          ready = False
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  ready = json.load(response).get('build_type') == 'workflow'
+          except urllib.error.HTTPError as error:
+              if error.code != 404: raise
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('ready=' + str(ready).lower() + '\n')
+          if not ready:
+              print('::notice::Website validated. Select GitHub Actions in Settings > Pages, then rerun this workflow to deploy.')
+          PY
+      - name: Configure Pages
+        if: steps.pages.outputs.ready == 'true'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - name: Prepare public assets
+        if: steps.pages.outputs.ready == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/cosmic-mail-web"
+          cp -R web/index.html web/styles.css web/site.js web/CNAME web/robots.txt web/sitemap.xml web/assets "$RUNNER_TEMP/cosmic-mail-web/"
+      - name: Upload website
+        if: steps.pages.outputs.ready == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+        with:
+          path: ${{ runner.temp }}/cosmic-mail-web
+          retention-days: 1
+  deploy:
+    if: needs.prepare.outputs.pages-ready == 'true'
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy website
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

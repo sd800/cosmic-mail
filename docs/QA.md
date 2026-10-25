@@ -38,3 +38,7 @@ Use small synthetic inputs and run the checks relevant to the changed behavior. 
 ## Fixtures
 
 `scripts/make-fixtures.py` creates small synthetic messages and archives in ignored `test-dist/`. Keep its local README current so fixtures can be reused for later maintenance. Retain test code, tiny fixtures, and concise findings, not full logs or recordings. Real mail and personal browser data stay outside test artifacts and the repository.
+
+## Product website
+
+The website has separate static checks: `python3 -B -m unittest discover -s test -p website_test.py` and `node --check web/site.js`. For visual or interaction changes, verify file:// opening, system light/dark appearance, desktop/narrow layouts, readable contrast, nonnegative letter spacing, keyboard-operated preview tabs, copy actions, anchored FAQs, and reduced motion. Confirm the page makes no external resource requests and the deployment artifact contains only public website assets. Website-only updates do not require rebuilding the application.

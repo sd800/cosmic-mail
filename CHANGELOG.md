@@ -2,6 +2,11 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.9 — 2026-10-25
+
+- Add an English product website with adaptive sky-blue appearance, interactive previews, and GitHub Pages deployment.
+- Refresh the app icon with a sky-blue palette.
+
 ## 26.1025.8 — 2026-10-25
 
 - Improve local-file validation and reading safeguards.
