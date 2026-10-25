@@ -34,6 +34,7 @@ jobs:
         run: |
           python3 -B -m unittest discover -s test -p 'website_test.py'
           node --check web/site.js
+          node --check web/redirect.js
       - name: Check Pages configuration
         id: pages
         env:
@@ -65,7 +66,7 @@ jobs:
         if: steps.pages.outputs.ready == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/cosmic-mail-web"
-          cp -R web/index.html web/styles.css web/site.js web/CNAME web/robots.txt web/sitemap.xml web/assets "$RUNNER_TEMP/cosmic-mail-web/"
+          cp -R web/index.html web/styles.css web/site.js web/redirect.js web/CNAME web/robots.txt web/sitemap.xml web/assets web/downloads web/index "$RUNNER_TEMP/cosmic-mail-web/"
       - name: Upload website
         if: steps.pages.outputs.ready == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5

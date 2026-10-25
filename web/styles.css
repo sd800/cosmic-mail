@@ -165,23 +165,23 @@ kbd { font: inherit; font-size: 13px; white-space: nowrap; margin-inline: 3px; }
 .site-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding-block: 30px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .site-footer>div { display: flex; gap: 25px; }
 .site-footer a:hover { color: var(--blue); }
-.installation { display: grid; grid-template-columns: 1fr 1.25fr; gap: 78px; border-top: 1px solid var(--line); padding-block: 76px 90px; }
-.installation-intro h2 { font-size: clamp(32px, 3.5vw, 43px); font-weight: 550; line-height: 1.2; margin-top: 20px; }
-.installation-intro>p:last-child { max-width: 300px; margin-top: 24px; font-size: 16px; color: var(--muted); }
-.installation-steps { padding: 0; margin: 0; list-style: none; }
-.installation-steps li { display: grid; grid-template-columns: 30px minmax(0,1fr); gap: 18px; padding-block: 0 26px; }
-.installation-steps li+li { border-top: 1px solid var(--line); padding-top: 26px; }
-.step-number { display: grid; place-items: center; align-self: start; width: 29px; height: 29px; border: 1px solid var(--line); background: var(--stage); border-radius: 50%; color: var(--blue); font-size: 13px; font-weight: 600; }
-.installation h3 { font-size: 16px; font-weight: 600; line-height: 1.6; }
-.installation-content p { margin-top: 9px; color: var(--muted); font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
-.installation-content strong { color: var(--ink); font-weight: 550; }
-.installation-content .installation-hint { padding-left: 14px; border-left: 2px solid var(--line); margin-top: 17px; }
-.installation-content .signing-note { margin-top: 16px; font-size: 13px; }
-.signing-note a { color: var(--blue); text-decoration: underline; text-underline-offset: 3px; }
-.first-use { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; border-top: 1px solid var(--line); padding-top: 27px; margin-top: 5px; }
-.first-use h3 { font-size: 15px; }
-.first-use p { font-size: 13px; }
-.optional-label { display: inline-block; color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 6px; }
+.installation { border-top: 1px solid var(--line); padding-block: 76px 90px; }
+.installation-heading { display: flex; align-items: end; justify-content: space-between; gap: 40px; }
+.installation-heading h2 { font-size: clamp(32px, 3.5vw, 43px); font-weight: 550; line-height: 1.2; margin-top: 20px; }
+.installation-heading>p { font-size: 16px; line-height: 1.75; color: var(--muted); }
+.installation-steps { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 45px; padding: 0; margin: 43px 0 38px; list-style: none; }
+.installation-steps li { border-top: 1px solid var(--line); padding-top: 21px; }
+.step-number { display: block; color: var(--blue); font-size: 12px; font-weight: 550; margin-bottom: 15px; }
+.installation h3 { font-size: 18px; font-weight: 550; line-height: 1.5; }
+.installation-steps p { margin-top: 11px; color: var(--muted); font-size: 15px; line-height: 1.85; }
+.installation strong { color: var(--ink); font-weight: 550; }
+.installation-extras { display: grid; grid-template-columns: 1fr 1fr; gap: 45px; }
+.installation-extras details { border-top: 1px solid var(--line); }
+.installation-extras summary { justify-content: start; font-size: 14px; gap: 8px; }
+.installation-extras summary svg { margin-left: auto; }
+.installation-extras .answer { padding-right: 12px; }
+.optional-label { color: var(--muted); font-size: 12px; font-weight: 400; }
+.ready-to-read { margin-top: 29px; font-size: 14px; color: var(--muted); }
 @media (prefers-color-scheme: dark) {
   :root { --page: #111e28; --ink: #e1eff8; --muted: #a0b8ca; --line: #2d4557; --blue: #86ccf6; --button: #9bd7ff; --button-text: #123345; --stage: #1b3447; --window: #192b39; --toolbar: #21394c; --sidebar: #1d3243; --selected: #2a4c65; --field: #20394c; --privacy: #182f42; --shadow: 0 20px 64px #00000024, 0 2px 8px #00000014; }
   .primary:hover, .small-button:hover { color: #172a36; }
@@ -204,8 +204,9 @@ kbd { font: inherit; font-size: 13px; white-space: nowrap; margin-inline: 3px; }
   .hero .eyebrow { font-size: 11px; }
 }
 @media (max-width: 850px) {
-  .installation { gap: 42px; grid-template-columns: 1fr 1.3fr; padding-block: 64px; }
-  .first-use { grid-template-columns: 1fr; gap: 22px; }
+  .installation { padding-block: 64px; }
+  .installation-steps { gap: 26px; }
+  .installation-extras { gap: 26px; }
   .hero { grid-template-columns: 1fr; gap: 52px; padding-block: 72px 56px; }
   .hero-copy { max-width: 560px; }
   .hero .eyebrow { font-size: 11px; }
@@ -229,10 +230,14 @@ kbd { font: inherit; font-size: 13px; white-space: nowrap; margin-inline: 3px; }
   .site-footer>span:last-child { display: none; }
 }
 @media (max-width: 600px) {
-  .installation { grid-template-columns: 1fr; gap: 33px; padding-block: 50px; }
-  .installation-intro h2 { font-size: 33px; }
-  .installation-intro>p:last-child { max-width: none; margin-top: 17px; }
-  .installation-steps li { gap: 14px; }
+  .installation { padding-block: 50px; }
+  .installation-heading { display: block; }
+  .installation-heading h2 { font-size: 33px; }
+  .installation-heading>p { margin-top: 20px; }
+  .installation-heading>p br { display: none; }
+  .installation-steps { grid-template-columns: 1fr; gap: 27px; margin-block: 30px; }
+  .installation-extras { grid-template-columns: 1fr; gap: 0; }
+  .installation-extras details+details { border-top: 0; }
   .wrap { width: calc(100% - 40px); }
   .nav { min-height: 76px; gap: 16px; }
   .brand { font-size: 18px; gap: 8px; }

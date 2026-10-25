@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.11 — 2026-10-25
+
+- Refine website installation guidance, enable direct downloads, and normalize homepage addresses.
+
 ## 26.1025.10 — 2026-10-25
 
 - Add a dedicated website guide for installation, first-launch approval, and email-link setup.

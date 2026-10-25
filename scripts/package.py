@@ -2,6 +2,8 @@
 """Package and verify a signed app outside workspace metadata synchronization."""
 from pathlib import Path
 import hashlib
+import json
+import shutil
 import subprocess
 import tempfile
 
@@ -27,4 +29,15 @@ with tempfile.TemporaryDirectory(prefix='cosmic-mail-package-') as temporary:
     with (dist / name).open('rb') as released:
         digest = hashlib.file_digest(released, 'sha256').hexdigest()
     (dist / 'SHA256SUMS.txt').write_text(f'{digest}  {name}\n')
+# Keep the website's direct download identical to the verified release asset.
+website = root / 'web'
+if (website / 'index.html').is_file():
+    downloads = website / 'downloads'
+    downloads.mkdir(exist_ok=True)
+    shutil.copyfile(dist / name, downloads / 'Cosmic-Mail.zip')
+    (downloads / 'SHA256SUMS.txt').write_text(f'{digest}  Cosmic-Mail.zip\n')
+    (downloads / 'latest.json').write_text(json.dumps({
+        'version': version, 'file': 'Cosmic-Mail.zip',
+        'bytes': (dist / name).stat().st_size, 'sha256': digest,
+    }, indent=2) + '\n')
 print(f'Built and verified {name}')

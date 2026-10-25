@@ -42,3 +42,5 @@ Use small synthetic inputs and run the checks relevant to the changed behavior. 
 ## Product website
 
 The website has separate static checks: `python3 -B -m unittest discover -s test -p website_test.py` and `node --check web/site.js`. For visual or interaction changes, verify file:// opening, system light/dark appearance, desktop/narrow layouts, readable contrast, nonnegative letter spacing, keyboard-operated preview tabs, copy actions, anchored FAQs, and reduced motion. Confirm the page makes no external resource requests and the deployment artifact contains only public website assets. Website-only updates do not require rebuilding the application.
+
+For website download/routing changes, verify the same-origin download starts without navigation and matches downloads/latest.json and SHA256SUMS.txt. Test /index, /index.html, and /index/ over HTTP, with query/fragment retention and unchanged file:// opening. Packaging refreshes the website archive only after the signed release archive has passed verification.

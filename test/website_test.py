@@ -2,6 +2,8 @@
 from html.parser import HTMLParser
 from pathlib import Path
 import re
+import hashlib
+import json
 import unittest
 from urllib.parse import urlsplit, unquote
 import xml.etree.ElementTree as ET
@@ -61,9 +63,18 @@ class WebsiteTests(unittest.TestCase):
         root = ET.parse(WEB / 'sitemap.xml').getroot()
         self.assertEqual(root.find('.//{*}loc').text, 'https://cmail.songming.org/')
         self.assertIn('https://cmail.songming.org/sitemap.xml', (WEB / 'robots.txt').read_text())
-        self.assertEqual(self.source.count('https://github.com/sd800/cosmic-mail/releases/latest'), 1)
+        downloads = [attrs['href'] for tag, attrs in self.page.tags if tag == 'a' and 'download' in attrs]
+        self.assertEqual(downloads, ['downloads/Cosmic-Mail.zip'] * 3)
         external = [attrs['href'] for tag, attrs in self.page.tags if tag == 'a' and attrs.get('href', '').startswith('https://github.com/')]
-        self.assertEqual(len(external), 2)
+        self.assertEqual(len(external), 1)
         self.assertNotRegex(self.source, r'releases/download/[^/]+/')
+
+    def test_download_integrity(self):
+        info = json.loads((WEB / 'downloads/latest.json').read_text())
+        archive = WEB / 'downloads' / info['file']
+        self.assertEqual(info['version'], (ROOT / 'VERSION').read_text().strip())
+        self.assertEqual(archive.stat().st_size, info['bytes'])
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), info['sha256'])
+        self.assertEqual((WEB / 'downloads/SHA256SUMS.txt').read_text(), info['sha256'] + '  Cosmic-Mail.zip\n')
 
 if __name__ == '__main__': unittest.main()
