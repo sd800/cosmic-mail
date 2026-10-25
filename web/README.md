@@ -6,7 +6,7 @@ The English product website for https://cmail.songming.org/.
 
 Double-click `index.html`. HTML, CSS, JavaScript, the app icon, and the interactive product illustration are local files. There are no packages to install, build steps, external fonts, analytics, or runtime data requests. The sky-blue palette follows the system appearance automatically. All typography uses system fonts with normal or positive letter spacing.
 
-The preview contains illustrative email at example.org, not real messages or a live mail reader. Its copy buttons act only on that example. All three app buttons download downloads/Cosmic-Mail.zip directly from the website. The archive is byte-identical to the verified app release; scripts/package.py refreshes it and its version/checksum metadata with every app package. The footer retains one source-repository link.
+The preview contains illustrative email at example.org, not real messages or a live mail reader. Its copy buttons act only on that example. All three app buttons download downloads/Cosmic-Mail.zip directly from the website. The archive is byte-identical to the verified app release; scripts/package.py refreshes it and its version/checksum metadata with every app package. The header and footer provide source-repository links.
 
 ## Deployment
 

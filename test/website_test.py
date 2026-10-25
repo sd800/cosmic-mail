@@ -66,7 +66,7 @@ class WebsiteTests(unittest.TestCase):
         downloads = [attrs['href'] for tag, attrs in self.page.tags if tag == 'a' and 'download' in attrs]
         self.assertEqual(downloads, ['downloads/Cosmic-Mail.zip'] * 4)
         external = [attrs['href'] for tag, attrs in self.page.tags if tag == 'a' and attrs.get('href', '').startswith('https://github.com/')]
-        self.assertEqual(len(external), 1)
+        self.assertEqual(len(external), 2)
         self.assertNotRegex(self.source, r'releases/download/[^/]+/')
 
     def test_download_integrity(self):

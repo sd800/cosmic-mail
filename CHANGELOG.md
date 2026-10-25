@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.13 — 2026-10-25
+
+- Add a GitHub repository link to the website header.
+
 ## 26.1025.12 — 2026-10-25
 
 - Refine the website installation download link.
