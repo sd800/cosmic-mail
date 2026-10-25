@@ -41,7 +41,7 @@ img { display: block; max-width: 100%; height: auto; }
 .skip-link { position: fixed; top: 12px; left: 12px; z-index: 20; padding: 10px 16px; background: var(--window); border: 1px solid var(--line); transform: translateY(-150%); }
 .skip-link:focus { transform: none; }
 .site-header { border-bottom: 1px solid var(--line); }
-.nav { min-height: 92px; display: flex; align-items: center; gap: 36px; }
+.nav { min-height: 92px; display: flex; align-items: center; gap: 30px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 600; white-space: nowrap; }
 .nav nav { display: flex; align-items: center; gap: 30px; margin-left: auto; font-size: 15px; }
 .nav nav a { color: var(--muted); }
