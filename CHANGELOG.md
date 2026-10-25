@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.10 — 2026-10-25
+
+- Add a dedicated website guide for installation, first-launch approval, and email-link setup.
+
 ## 26.1025.9 — 2026-10-25
 
 - Add an English product website with adaptive sky-blue appearance, interactive previews, and GitHub Pages deployment.

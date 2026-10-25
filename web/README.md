@@ -19,3 +19,5 @@ Select **GitHub Actions** as the Pages source in repository Settings, set the cu
 ## Maintenance
 
 Run `python3 -B -m unittest discover -s test -p 'website_test.py'` and `node --check web/site.js`. After layout or interaction changes, check local file opening in light/dark appearance, keyboard tab selection, copying, anchored navigation, reduced motion, and a narrow viewport. Reuse browser checks under ignored `test-dist/website` without saving private data or full logs.
+
+The installation section below Download walks through the release asset, ZIP extraction, Applications, an initial open attempt, macOS Privacy & Security approval, and optional email-link setup. Keep approval limited to Cosmic Mail, without Terminal commands or global security changes. Apple’s linked guidance is the reference for current macOS terminology.
