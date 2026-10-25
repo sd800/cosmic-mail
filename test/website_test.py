@@ -64,7 +64,12 @@ class WebsiteTests(unittest.TestCase):
         self.assertEqual(root.find('.//{*}loc').text, 'https://cmail.songming.org/')
         self.assertIn('https://cmail.songming.org/sitemap.xml', (WEB / 'robots.txt').read_text())
         downloads = [attrs['href'] for tag, attrs in self.page.tags if tag == 'a' and 'download' in attrs]
-        self.assertEqual(downloads, ['downloads/Cosmic-Mail.zip'] * 4)
+        self.assertEqual(downloads, ['downloads/Cosmic-Mail.zip'] * 3)
+        hero_links = [attrs for tag, attrs in self.page.tags if tag == 'a'
+                      and attrs.get('href') == '#download'
+                      and 'primary' in attrs.get('class', '').split()]
+        self.assertEqual(len(hero_links), 1)
+        self.assertNotIn('download', hero_links[0])
         external = [attrs['href'] for tag, attrs in self.page.tags if tag == 'a' and attrs.get('href', '').startswith('https://github.com/')]
         self.assertEqual(len(external), 2)
         self.assertNotRegex(self.source, r'releases/download/[^/]+/')

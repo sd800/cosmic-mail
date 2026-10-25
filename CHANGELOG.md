@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.17 — 2026-10-25
+
+- Update website validation for the introductory download navigation.
+
 ## 26.1025.16 — 2026-10-25
 
 - Refine the website’s introductory download navigation.
