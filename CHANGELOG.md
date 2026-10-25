@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.8 — 2026-10-25
+
+- Improve local-file validation and reading safeguards.
+
 ## 26.1021.7 — 2026-10-21
 
 - Improve message decoding, formatting, and attachment handling.

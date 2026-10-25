@@ -24,7 +24,7 @@ Attachments stay inert in the reader. Saving requires an explicit action and a d
 
 ## Bounded file processing
 
-Native Swift readers validate MIME structure, MSG/CFB storage chains, and mailbox records. Nesting, parse work, part counts, message sizes, index metadata, image dimensions, and attachment sizes have explicit limits. Compound-file readers check offsets and detect cyclic chains. [TECHNICAL.md](TECHNICAL.md) maintains the current budgets and supported format details.
+Native Swift readers validate MIME structure, MSG/CFB storage chains, and mailbox records. Source files are opened nonblocking and checked as regular files through their actual descriptors before reading. Nonlocal URLs, NUL paths, pipes, devices, and invalid output types are rejected; ordinary user-selected file aliases retain their regular-file checks. Nesting, parse work, part counts, message sizes, index metadata, image dimensions, and attachment sizes have explicit limits. Compound-file readers check offsets and detect cyclic chains. [TECHNICAL.md](TECHNICAL.md) maintains the current budgets and supported format details.
 
 Archive indexing is incremental and cancellable. Source-file identity checks detect changes during reading; presentation ownership keeps superseded selections from replacing current content. Parsing, date ordering, and cancellable recipient/body search run away from the main UI. Only one message body is searched at a time, without a persistent body index. Unreadable or oversized search omissions are counted in the interface. Original-message export is independent of the preview limit and streams through a bounded buffer to the chosen destination. A failed or cancelled export removes its temporary output and leaves an existing destination intact.
 

@@ -7,7 +7,7 @@ Use small synthetic inputs and run the checks relevant to the changed behavior. 
 - Check mailto decoding, folded headers, MIME alternatives, common encodings, CID images, EMLX export, and MSG/CFB bounds and cyclic chains.
 - Exercise MBOX indexing with a small multi-message file, separators inside bodies, Content-Length, and a line crossing the scanner chunk boundary. Simulate index limits with small configured budgets and oversized-message behavior with metadata rather than large generated files.
 - Search recipients and decoded body text, check newest/oldest date ordering without changing selection IDs, and copy a tiny original with deliberately small chunks. Cancellation must preserve an existing output; export/save must reject open-source destinations. Test export architecture without generating a large message.
-- Check incremental results, cancellation, changed source files, RAM index reuse, background search, and Maildir symlink filtering. A partial or failed read must leave a clear state and a usable retry path.
+- Check regular-file descriptor admission, named-pipe/device/nonlocal/NUL rejection, regular symlink inputs, and invalid destination types. Check incremental results, cancellation, changed source files, RAM index reuse, background search, and Maildir symlink filtering. A partial or failed read must leave a clear state and a usable retry path.
 - Open multiple files, switch between them, close individual files, and close all. Each open file keeps its selected message while present in the sidebar.
 
 ## Protected display

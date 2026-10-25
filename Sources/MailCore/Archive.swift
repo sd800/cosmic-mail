@@ -11,7 +11,8 @@ public struct FileRevision: Sendable, Equatable {
 
   static func capture(_ file: FileHandle) throws -> Self {
     var value = stat()
-    guard fstat(file.fileDescriptor, &value) == 0, value.st_size >= 0 else {
+    guard fstat(file.fileDescriptor, &value) == 0, value.st_size >= 0,
+      (value.st_mode & S_IFMT) == S_IFREG else {
       throw MailError.malformed
     }
     return Self(
@@ -25,12 +26,32 @@ public struct FileRevision: Sendable, Equatable {
 
 public enum MailReader {
   public static let extensions = ["eml", "emlx", "msg", "oft", "mbox", "mbx", "mbo", "mime"]
+  private static func isLocalFile(_ url: URL) -> Bool {
+    url.isFileURL && !url.path.utf8.contains(0) && !url.path(percentEncoded: true).contains("%00")
+      && (url.host == nil || url.host == "" || url.host == "localhost")
+  }
+
+  /// Nonblocking open prevents named pipes/devices from occupying a reading lane.
+  /// The opened descriptor, not a racy path-only check, must be a regular file.
+  static func openSource(_ url: URL) throws -> FileHandle {
+    guard isLocalFile(url) else {
+      throw MailError.malformed
+    }
+    let descriptor = Darwin.open(url.path, O_RDONLY | O_NONBLOCK | O_CLOEXEC)
+    guard descriptor >= 0 else { throw MailError.malformed }
+    let file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+    do { _ = try FileRevision.capture(file) }
+    catch { try? file.close(); throw error }
+    return file
+  }
+
   public static func collection(
     _ url: URL, cancelled: @escaping () -> Bool = { false },
     progress: @escaping (Int) -> Void = { _ in },
     limits: IndexLimits = IndexLimits(), batch: @escaping ([MessageEntry]) -> Void = { _ in }
   ) throws -> MailCollection {
     if cancelled() { throw MailError.cancelled }
+    guard isLocalFile(url) else { throw MailError.malformed }
     var directory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: url.path, isDirectory: &directory) else {
       throw MailError.malformed
@@ -56,7 +77,7 @@ public enum MailReader {
           if cancelled() { throw MailError.cancelled }
           let info = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
           if info.isRegularFile != true || info.isSymbolicLink == true { continue }
-          let handle = try FileHandle(forReadingFrom: file)
+          let handle = try openSource(file)
           defer { try? handle.close() }
           let revision = try FileRevision.capture(handle)
           let fields = try headerFields(handle, cancelled: cancelled).fields
@@ -74,7 +95,7 @@ public enum MailReader {
         url, cancelled: cancelled, progress: progress, limits: limits, batch: batch)
     }
     guard extensions.contains(ext) else { throw MailError.unsupported }
-    let handle = try FileHandle(forReadingFrom: url)
+    let handle = try openSource(url)
     defer { try? handle.close() }
     let revision = try FileRevision.capture(handle)
     let size = Int(revision.size)
@@ -109,7 +130,7 @@ public enum MailReader {
     guard collection.kind != "Maildir", !collection.isIndexing,
       !collection.indexInterrupted, !collection.indexLimitReached,
       let entry = collection.entries.first, let revision = entry.revision,
-      let file = try? FileHandle(forReadingFrom: entry.file)
+      let file = try? openSource(entry.file)
     else { return false }
     defer { try? file.close() }
     return (try? FileRevision.capture(file)) == revision
@@ -133,10 +154,11 @@ public enum MailReader {
     try emlx(source(entry, cancelled: { false }), extension: entry.file.pathExtension.lowercased())
   }
   public static func validateDestination(_ destination: URL, protecting sources: [URL]) throws {
-    guard destination.isFileURL else { throw MailError.malformed }
+    guard isLocalFile(destination) else { throw MailError.malformed }
     let target = destination.standardizedFileURL.resolvingSymlinksInPath()
     var output = stat()
     let exists = stat(target.path, &output) == 0
+    if exists && (output.st_mode & S_IFMT) != S_IFREG { throw MailError.unsafeDestination }
     for source in sources where source.isFileURL {
       let path = source.standardizedFileURL.resolvingSymlinksInPath()
       var original = stat()
@@ -165,8 +187,8 @@ public enum MailReader {
     _ entry: MessageEntry, to destination: URL,
     cancelled: () -> Bool = { false }, chunkSize: Int = 128 * 1024
   ) throws {
-    guard entry.length >= 0, destination.isFileURL else { throw MailError.malformed }
-    let input = try FileHandle(forReadingFrom: entry.file)
+    guard entry.length >= 0, isLocalFile(destination) else { throw MailError.malformed }
+    let input = try openSource(entry.file)
     defer { try? input.close() }
     try entry.revision?.verify(input)
     let sourceRevision = try FileRevision.capture(input)
@@ -176,7 +198,7 @@ public enum MailReader {
       {
         throw MailError.unsafeDestination
       }
-      if let target = try? FileHandle(forReadingFrom: destination) {
+      if let target = try? openSource(destination) {
         defer { try? target.close() }
         let revision = try FileRevision.capture(target)
         guard revision.device != sourceRevision.device || revision.inode != sourceRevision.inode
@@ -220,7 +242,7 @@ public enum MailReader {
   }
   private static func source(_ entry: MessageEntry, cancelled: () -> Bool) throws -> Data {
     guard entry.length >= 0, entry.length <= Limits.message else { throw MailError.tooLarge }
-    let file = try FileHandle(forReadingFrom: entry.file)
+    let file = try openSource(entry.file)
     defer { try? file.close() }
     try entry.revision?.verify(file)
     try file.seek(toOffset: entry.offset)
@@ -306,7 +328,7 @@ public enum MailReader {
     limits: IndexLimits,
     batch: @escaping ([MessageEntry]) -> Void
   ) throws -> MailCollection {
-    let file = try FileHandle(forReadingFrom: url)
+    let file = try openSource(url)
     defer { try? file.close() }
     let revision = try FileRevision.capture(file)
     guard revision.size > 0 else { throw MailError.malformed }

@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 
 @testable import MailCore
@@ -9,6 +10,33 @@ final class MailCoreTests: XCTestCase {
     addTeardownBlock { try? FileManager.default.removeItem(at: url) }
     return url
   }
+  func testSpecialFilesAndNonFileURLsAreRejectedBeforeReading() throws {
+    let folder = try temp()
+    let fifo = folder.appendingPathComponent("message.eml")
+    XCTAssertEqual(Darwin.mkfifo(fifo.path, 0o600), 0)
+    XCTAssertThrowsError(try MailReader.openSource(fifo))
+    XCTAssertThrowsError(try MailReader.collection(fifo))
+    XCTAssertThrowsError(try MailReader.openSource(URL(fileURLWithPath: "/dev/null")))
+    XCTAssertThrowsError(try MailReader.openSource(URL(string: "file:///tmp/rejected%00.eml")!))
+    XCTAssertThrowsError(try MailReader.openSource(folder))
+    XCTAssertThrowsError(try MailReader.openSource(URL(string: "https://example.test/mail.eml")!))
+    XCTAssertThrowsError(try MailReader.collection(URL(string: "https://example.test/mail.eml")!))
+    XCTAssertThrowsError(try MailReader.validateDestination(fifo, protecting: []))
+    for raw in ["file:///tmp/rejected%00.eml", "file://remote.example.test/tmp/rejected.eml"] {
+      let invalid = URL(string: raw)!
+      XCTAssertThrowsError(try MailReader.openSource(invalid))
+      XCTAssertThrowsError(try MailReader.collection(invalid))
+      XCTAssertThrowsError(try MailReader.validateDestination(invalid, protecting: []))
+    }
+    let source = folder.appendingPathComponent("regular.eml")
+    try Data("From: sender@example.test\nSubject: Safe\n\nBody".utf8).write(to: source)
+    let link = folder.appendingPathComponent("selected-link.eml")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: source)
+    let file = try MailReader.openSource(link)
+    defer { try? file.close() }
+    XCTAssertEqual(try file.readToEnd(), try Data(contentsOf: source))
+  }
+
   func testMailtoPreservesPlusAndDecodesFields() throws {
     let value = try MailtoCapture(
       "mailto:student+notes@example.edu?to=other%40example.edu&cc=one%40example.edu&cc=two%40example.edu&subject=Hello%0D%0ABcc%3A%20bad&body=Line%201%0ALine%202&"
