@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.16 — 2026-10-25
+
+- Refine the website’s introductory download navigation.
+
 ## 26.1025.15 — 2026-10-25
 
 - Align website header navigation spacing.
