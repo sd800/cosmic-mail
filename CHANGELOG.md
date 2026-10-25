@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## 26.1025.12 — 2026-10-25
+
+- Refine the website installation download link.
+
 ## 26.1025.11 — 2026-10-25
 
 - Refine website installation guidance, enable direct downloads, and normalize homepage addresses.
