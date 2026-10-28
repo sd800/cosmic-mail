@@ -52,3 +52,7 @@ Build with **Xcode 16 or later**, an installed macOS SDK, Swift, and Python 3. N
 ```
 
 The release ZIP is written to `dist/`. See [technical documentation](docs/TECHNICAL.md) and [security design](docs/SECURITY.md).
+
+## License
+
+Cosmic Mail is licensed under the [MIT License](LICENSE).
