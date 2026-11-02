@@ -7,14 +7,14 @@ import shutil
 import subprocess
 import tempfile
 
-root = Path(__file__).resolve().parent.parent
+root = Path(__file__).resolve().parents[2]
 version = (root / 'VERSION').read_text().strip()
 dist = root / 'dist'
 name = f'Cosmic-Mail-{version}-universal.zip'
 with tempfile.TemporaryDirectory(prefix='cosmic-mail-package-') as temporary:
     staging = Path(temporary)
     app = staging / 'Cosmic Mail.app'
-    subprocess.run(['python3', str(root / 'scripts/bundle.py'), str(app), str(dist / 'CosmicMail')], check=True)
+    subprocess.run(['python3', str(root / 'scripts/build/bundle.py'), str(app), str(dist / 'CosmicMail')], check=True)
     subprocess.run(['codesign', '--force', '--sign', '-', '--options', 'runtime', '--entitlements',
                     str(root / 'Resources/CosmicMail.entitlements'), str(app)], check=True)
     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)

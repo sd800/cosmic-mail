@@ -1,6 +1,6 @@
 # Verification guide
 
-Use small synthetic inputs and run the checks relevant to the changed behavior. Parser and UI tests live in `Tests/`; `scripts/test.sh` is the full test entry point. No stress test or large archive is needed for routine maintenance.
+Use small synthetic inputs and run the checks relevant to the changed behavior. Parser and UI tests live in `Tests/`; `scripts/checks/test.sh` is the full test entry point. No stress test or large archive is needed for routine maintenance.
 
 ## Message parsing and archive handling
 
@@ -31,13 +31,13 @@ Use small synthetic inputs and run the checks relevant to the changed behavior. 
 
 ## Icons and packaging
 
-- Generate icons from `scripts/icon.swift` and verify the `.icns` and README PNG use the same artwork. Both README headings display the generated PNG at 96 px.
-- Build the universal release using `scripts/build.sh`. Verify arm64/x86_64 slices and strict App Sandbox code signing; validate the ZIP and checksum against the committed source.
+- Generate icons from `scripts/assets/icon.swift` and verify the `.icns` and README PNG use the same artwork. Both README headings display the generated PNG at 96 px.
+- Build the universal release using `scripts/build/build.sh`. Verify arm64/x86_64 slices and strict App Sandbox code signing; validate the ZIP and checksum against the committed source.
 - Run the relevant smoke checks against the release bundle. Track architecture-specific runtime coverage separately from universal compilation.
 
 ## Fixtures
 
-`scripts/make-fixtures.py` creates small synthetic messages and archives in ignored `test-dist/`. Keep its local README current so fixtures can be reused for later maintenance. Retain test code, tiny fixtures, and concise findings, not full logs or recordings. Real mail and personal browser data stay outside test artifacts and the repository.
+`scripts/fixtures/make-fixtures.py` creates small synthetic messages and archives in ignored `test-dist/`. Keep its local README current so fixtures can be reused for later maintenance. Retain test code, tiny fixtures, and concise findings, not full logs or recordings. Real mail and personal browser data stay outside test artifacts and the repository.
 
 ## Product website
 

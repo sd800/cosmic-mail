@@ -2,6 +2,10 @@
 
 [Simplified Chinese](CHANGELOG_zh.md)
 
+## Unreleased
+
+- Group development scripts by build, checks, assets, fixtures, and reference updates; align build-helper paths and development documentation.
+
 ## 26.1025.17 — 2026-10-25
 
 - Update website checks to distinguish the introductory link to the Download section from the ZIP download action.

@@ -11,7 +11,7 @@ def swift(text):
     ) + '"'
 
 
-target = Path(__file__).resolve().parent.parent / 'Sources/MailCore/HTMLEntities.swift'
+target = Path(__file__).resolve().parents[2] / 'Sources/MailCore/HTMLEntities.swift'
 names = {name[:-1]: text for name, text in html5.items() if name.endswith(';')}
 target.write_text(
     '// Named character references defined by the HTML standard. Values are decoded once, then escaped.\n'

@@ -47,8 +47,8 @@ Cosmic Mail 的设计源于一个简单的想法：**打开一条链接或一个
 需要 **Xcode 16 或更新版本**、macOS SDK、Swift 和 Python 3，无第三方软件包依赖。
 
 ```sh
-./scripts/test.sh
-./scripts/build.sh
+./scripts/checks/test.sh
+./scripts/build/build.sh
 ```
 
 安装包输出至 `dist/`。详见[技术文档](docs/TECHNICAL.md)和[安全设计](docs/SECURITY.md)。

@@ -47,8 +47,8 @@ Visit [cmail.songming.org](https://cmail.songming.org/) for the product website.
 Build with **Xcode 16 or later**, an installed macOS SDK, Swift, and Python 3. No external packages are required.
 
 ```sh
-./scripts/test.sh
-./scripts/build.sh
+./scripts/checks/test.sh
+./scripts/build/build.sh
 ```
 
 The release ZIP is written to `dist/`. See [technical documentation](docs/TECHNICAL.md) and [security design](docs/SECURITY.md).

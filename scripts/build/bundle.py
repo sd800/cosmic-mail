@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create native bundle metadata; never changes system default handlers."""
 import pathlib, plistlib, shutil, subprocess, sys
-root=pathlib.Path(__file__).resolve().parent.parent
+root=pathlib.Path(__file__).resolve().parents[2]
 app=pathlib.Path(sys.argv[1]); binary=pathlib.Path(sys.argv[2]); version=(root/'VERSION').read_text().strip()
 (app/'Contents/MacOS').mkdir(parents=True,exist_ok=True); (app/'Contents/Resources').mkdir(exist_ok=True)
 shutil.copy2(binary,app/'Contents/MacOS/CosmicMail');shutil.copy2(root/'Resources/AppIcon.icns',app/'Contents/Resources/AppIcon.icns')

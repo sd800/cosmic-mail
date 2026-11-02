@@ -54,6 +54,10 @@ EML and MSG message attachments can be opened explicitly as separate RAM-only si
 
 `VERSION` is the version source of truth. Format: `YY.MDD.NUM`; `NUM` is the release sequence for that month. Example: `26.1020.1`. Commit subjects are exactly `Release <version>`, without a body. Public changes go in bilingual changelogs.
 
-`./scripts/build.sh` creates separate optimized arm64/x86_64 builds for macOS 14+, combines them using lipo, creates a native bundle in a temporary staging directory, applies ad-hoc sandbox signing, verifies the actual extracted ZIP, and writes the app/ZIP/checksum to `dist/`. Staging keeps workspace metadata synchronization out of the distributable. There are no runtime third-party packages. `MAIL_SDK_OVERRIDE` selects another installed SDK. When installed, macOS 26.5 is the default SDK selected by these scripts.
+`./scripts/build/build.sh` creates separate optimized arm64/x86_64 builds for macOS 14+, combines them using lipo, creates a native bundle in a temporary staging directory, applies ad-hoc sandbox signing, verifies the actual extracted ZIP, and writes the app/ZIP/checksum to `dist/`. Staging keeps workspace metadata synchronization out of the distributable. There are no runtime third-party packages. `MAIL_SDK_OVERRIDE` selects another installed SDK. When installed, macOS 26.5 is the default SDK selected by these scripts.
 
 Release assets must come from the exact committed source. Upload the universal ZIP and SHA256SUMS.txt to the corresponding GitHub Release. Apple signing/notarization is not available; document the normal macOS Open Anyway workflow, never global Gatekeeper disabling.
+
+## Development script layout
+
+Development tools are grouped by purpose under `scripts/`; [the script directory guide](../scripts/README.md) lists current entry points. Build and test entry points resolve their inputs from the project root or their own location. The build entry uses categorized bundle, signing, packaging, and icon helpers. Synthetic message generators and reference-data updates have separate folders.
